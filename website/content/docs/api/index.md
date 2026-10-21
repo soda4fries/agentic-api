@@ -64,13 +64,12 @@ to every other `/v1/*` route; the configured upstream credential is injected onl
 
 ### `POST /v1/responses`
 
-HTTP Responses requests use the OpenAI-compatible Responses shape. Requests
-with `store=true`, `previous_response_id`, `conversation_id`, any non-function
-tool, `multi_agent.enabled`, tool-search state, compaction input, or
-`context_management` run through the executor. Other stateless `store=false`
-requests are passed directly to the configured vLLM backend. A `store=false`
-request that continues a stored response is hydrated from that response but is
-not stored itself: its id can be neither retrieved nor used as `previous_response_id`.
+HTTP Responses requests always use the typed executor for input/tool normalization
+and the tool loop. With `store:false` and no state IDs, clients supply the complete
+item history; the gateway neither rehydrates nor persists the turn. A stored
+`previous_response_id` or explicit `conversation` still supplies prior history,
+but `store:false` does not store the response or append conversation items. An
+unstored response ID cannot be retrieved or used for HTTP continuation.
 
 Executor-backed requests accept at most 64 MCP server declarations and 128
 discovered MCP tools. MCP discovery metadata shares the request's retained
@@ -159,7 +158,7 @@ so you can continue with `previous_response_id` without a database. After reconn
 replay the full item history or a compacted window; an unstored response ID returns
 `400 previous_response_not_found`. With `store: true`, an uncached response can be
 loaded from durable storage. Explicit `conversation_id` requests retain the durable
-Conversations API behavior.
+Conversations API behavior: `store:false` reads existing history without appending the new turn.
 
 A failed same-lane continuation evicts its referenced cached parent. Failed forks
 preserve the source lane's parent. Admission rejections (429) preserve existing

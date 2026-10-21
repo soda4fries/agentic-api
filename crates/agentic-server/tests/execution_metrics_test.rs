@@ -206,14 +206,14 @@ async fn http_terminal_paths_each_finalize_once() {
     assert_eq!(blocking.status(), 200);
     blocking.bytes().await.unwrap();
 
-    let proxied = client
+    let stateless = client
         .post(&url)
         .json(&request("hello", false, false))
         .send()
         .await
         .unwrap();
-    assert_eq!(proxied.status(), 200);
-    proxied.bytes().await.unwrap();
+    assert_eq!(stateless.status(), 200);
+    stateless.bytes().await.unwrap();
 
     let mut hanging = client
         .post(&url)
@@ -242,9 +242,12 @@ async fn http_terminal_paths_each_finalize_once() {
         total(
             &points,
             "agentic.execution.count",
-            &[("agentic.route", "proxy"), ("agentic.execution.outcome", "completed")]
+            &[
+                ("agentic.route", "executor"),
+                ("agentic.execution.outcome", "completed")
+            ]
         ),
-        1
+        3
     );
     assert_eq!(
         total(

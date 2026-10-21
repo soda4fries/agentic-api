@@ -377,25 +377,14 @@ async fn websocket_rejects_user_file_before_inference() {
 }
 
 #[tokio::test]
-async fn control_raw_proxy_preserves_exact_file_request_bytes() {
+async fn stateless_http_json_rejects_file_input_before_inference() {
     let fixture = Fixture::new().await;
-    let raw = format!(
-        "{{\n  \"model\":\"test-model\", \"store\":false, \"input\": {}\n}}",
-        user_input(&file_part())
-    );
-    let response = fixture
-        .client
-        .post(format!("{}/v1/responses", fixture.url))
-        .header("content-type", "application/json")
-        .body(raw.clone())
-        .send()
-        .await
-        .expect("raw HTTP response");
-    assert_eq!(response.status(), reqwest::StatusCode::OK);
-    let _ = response.bytes().await.expect("consume response");
-    let captured = fixture.requests.lock().await;
-    assert_eq!(captured.len(), 1);
-    assert_eq!(captured[0], raw.as_bytes());
+    fixture
+        .assert_rejected(
+            "/v1/responses",
+            json!({"model":"test-model", "store":false, "stream":false, "input":user_input(&file_part())}),
+        )
+        .await;
 }
 
 #[tokio::test]
@@ -644,25 +633,14 @@ async fn control_text_prewarm_still_persists_without_inference() {
 }
 
 #[tokio::test]
-async fn control_streaming_raw_proxy_preserves_exact_file_request_bytes() {
+async fn stateless_http_sse_rejects_file_input_before_inference() {
     let fixture = Fixture::new().await;
-    let raw = format!(
-        "{{\n  \"model\":\"test-model\", \"store\":false, \"stream\":true, \"input\": {}\n}}",
-        user_input(&file_part())
-    );
-    let response = fixture
-        .client
-        .post(format!("{}/v1/responses", fixture.url))
-        .header("content-type", "application/json")
-        .body(raw.clone())
-        .send()
-        .await
-        .expect("proxy response");
-    assert_eq!(response.status(), reqwest::StatusCode::OK);
-    let _ = response.bytes().await.expect("consume proxy stream");
-    let captured = fixture.requests.lock().await;
-    assert_eq!(captured.len(), 1);
-    assert_eq!(captured[0], raw.as_bytes());
+    fixture
+        .assert_rejected(
+            "/v1/responses",
+            json!({"model":"test-model", "store":false, "stream":true, "input":user_input(&file_part())}),
+        )
+        .await;
 }
 
 #[tokio::test]

@@ -431,7 +431,7 @@ mod tests {
 
     use super::*;
     use crate::executor::{ConversationHandler, ResponseHandler, commit, rehydrate_in_session};
-    use crate::storage::{ConversationStore, ResponseStore};
+    use crate::storage::{ConversationStore, ResponseStore, StorageError};
     use crate::tool::ToolError;
     use crate::types::io::{InputItem, InputMessageContent, ResponsesInput};
     use crate::utils::common::deserialize_from_value;
@@ -911,7 +911,7 @@ mod tests {
             .unwrap();
         assert!(matches!(
             ordinary.run().await,
-            Err(ExecutorError::PreviousResponseNotFound { .. })
+            Err(ExecutorError::Storage(StorageError::PreviousResponseNotFound { .. }))
         ));
 
         for stream in [false, true] {

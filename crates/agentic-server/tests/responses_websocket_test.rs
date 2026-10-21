@@ -2589,42 +2589,52 @@ async fn websocket_empty_prewarm_replaces_compacted_conversation_tool_search_sta
         .expect("seed compacted conversation state");
     let mut ws = connect_responses_ws(&gateway_url).await;
 
-    send_json(
-        &mut ws,
-        json!({
-            "type": "response.create",
-            "model": "test-model",
-            "conversation_id": conversation_id,
-            "input": [],
-            "tools": [tool_search_declaration(), deferred_weather_function()],
-            "parallel_tool_calls": false,
-            "generate": false,
-            "store": false,
-            "stream": true
-        }),
-    )
-    .await;
-    let prewarm = recv_until_completed(&mut ws).await;
-    let prewarm_response_id = prewarm.last().unwrap()["response"]["id"]
-        .as_str()
-        .expect("prewarm response ID")
-        .to_owned();
-    assert!(
-        mock.request_bodies().await.is_empty(),
-        "generate:false must not run inference"
-    );
-    let item_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM items WHERE conversation_id = $1")
-        .bind(&conversation_id)
-        .fetch_one(fixture.pool.as_ref())
-        .await
-        .expect("conversation item count");
-    assert_eq!(item_count, 1, "an empty prewarm must not advance item history");
-    let prewarm_checkpoint: String = sqlx::query_scalar("SELECT latest_response_id FROM conversations WHERE id = $1")
-        .bind(&conversation_id)
-        .fetch_one(fixture.pool.as_ref())
-        .await
-        .expect("prewarm conversation checkpoint");
-    assert_eq!(prewarm_checkpoint, prewarm_response_id);
+    for store in [false, true] {
+        send_json(
+            &mut ws,
+            json!({
+                "type": "response.create",
+                "model": "test-model",
+                "conversation_id": conversation_id,
+                "input": [],
+                "tools": [tool_search_declaration(), deferred_weather_function()],
+                "parallel_tool_calls": false,
+                "generate": false,
+                "store": store,
+                "stream": true
+            }),
+        )
+        .await;
+        let prewarm = recv_until_completed(&mut ws).await;
+        let prewarm_response_id = prewarm.last().unwrap()["response"]["id"]
+            .as_str()
+            .expect("prewarm response ID")
+            .to_owned();
+        assert!(
+            mock.request_bodies().await.is_empty(),
+            "generate:false must not run inference"
+        );
+        let item_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM items WHERE conversation_id = $1")
+            .bind(&conversation_id)
+            .fetch_one(fixture.pool.as_ref())
+            .await
+            .expect("conversation item count");
+        assert_eq!(item_count, 1, "an empty prewarm must not advance item history");
+        let prewarm_checkpoint: String =
+            sqlx::query_scalar("SELECT latest_response_id FROM conversations WHERE id = $1")
+                .bind(&conversation_id)
+                .fetch_one(fixture.pool.as_ref())
+                .await
+                .expect("prewarm conversation checkpoint");
+        assert_eq!(
+            prewarm_checkpoint,
+            if store {
+                prewarm_response_id.as_str()
+            } else {
+                "resp_before_prewarm"
+            }
+        );
+    }
 
     send_json(
         &mut ws,

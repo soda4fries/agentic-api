@@ -20,7 +20,7 @@ use tokio::net::TcpListener;
 use common::{spawn_gateway, test_config, test_state};
 
 const NON_STREAMING_STORED_REQUEST: &str = r#"{"model":"test","input":"hi","store":true,"stream":false}"#;
-const NON_STREAMING_PROXIED_REQUEST: &str = r#"{"model":"test","input":"hi","store":false,"stream":false}"#;
+const NON_STREAMING_STATELESS_REQUEST: &str = r#"{"model":"test","input":"hi","store":false,"stream":false}"#;
 
 /// Spawn a mock upstream whose `POST /v1/responses` always answers with the given error.
 async fn spawn_error_upstream(
@@ -127,9 +127,9 @@ async fn executor_path_still_filters_connection_nominated_headers() {
     assert!(response.headers().get("x-upstream-hop").is_none());
 }
 
-/// Control: the stateless proxy path already preserved these headers and must keep doing so.
+/// Stateless HTTP execution preserves the same upstream error metadata as stored requests.
 #[tokio::test]
-async fn proxy_path_preserves_upstream_error_metadata() {
+async fn stateless_execution_preserves_upstream_error_metadata() {
     let upstream_body = "rate limited";
     let (llm_url, _upstream) = spawn_error_upstream(
         StatusCode::TOO_MANY_REQUESTS,
@@ -140,7 +140,7 @@ async fn proxy_path_preserves_upstream_error_metadata() {
     .await;
     let (gateway_url, _gateway) = spawn_gateway(test_state(&test_config(&llm_url))).await;
 
-    let response = post_responses(&gateway_url, NON_STREAMING_PROXIED_REQUEST).await;
+    let response = post_responses(&gateway_url, NON_STREAMING_STATELESS_REQUEST).await;
 
     assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
     assert_eq!(response.headers()["retry-after"], "7");
