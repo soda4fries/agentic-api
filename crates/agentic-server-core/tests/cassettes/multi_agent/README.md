@@ -164,10 +164,19 @@ They replay each gateway response's own history and encrypted checkpoint, execut
 hosted tool routing, compare the resulting session with the OpenAI contract, check
 response retrieval returns 404, and assert zero response/item/conversation rows.
 Every recorded model and tool RPC must be consumed. Matching preserves request
-content, tool arguments, and call IDs; it ignores generated item/JSON-RPC IDs and
+content, tool arguments, and call IDs; it normalizes absent/null output-text
+`logprobs` to the canonical empty array and ignores generated item/JSON-RPC IDs and
 concurrent capacity/status notices. Unsupported MCP polling/teardown returns 405 without
 requiring timing-dependent request counts. No external services or credentials
 are needed to run the tests.
+
+The SSE replay also validates the freshly emitted gateway stream with the strict
+relay decoder. The original captures remain unchanged. The model dependency
+capture has 17 streams using message content-part events on reasoning items;
+the strict-relay cassette test asserts that exact rejection reason and count for
+that file. The recorded gateway streams and both live replay turns must pass
+strict validation. Typed output-text parts normalize missing or null `logprobs`
+to `[]`, matching public SSE normalization while preserving populated arrays.
 
 To refresh the gateway client captures and their dependencies together, build the
 release gateway, start the served model, and export `YOU_API_KEY`. The existing

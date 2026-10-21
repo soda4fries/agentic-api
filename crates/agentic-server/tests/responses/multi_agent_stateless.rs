@@ -11,10 +11,11 @@ use crate::common::{spawn_gateway, test_config, test_state};
 use crate::multi_agent_contract::{ComparisonPolicy, RecordedSession, assert_multi_agent_contract};
 use crate::support;
 use agentic_core::events::normalize_sse_line;
-use agentic_core::executor::{ConversationHandler, ExecutionContext, ResponseHandler};
+use agentic_core::executor::request::RequestContext;
+use agentic_core::executor::{ConversationHandler, ExecutionContext, ResponseHandler, UpstreamBody, decode_upstream};
 use agentic_core::storage::{ConversationStore, ResponseStore, create_pool_with_schema};
 use agentic_core::tool::WebSearchHandler;
-use agentic_core::types::request_response::ResponsePayload;
+use agentic_core::types::request_response::{RequestPayload, ResponsePayload};
 use dependencies::Dependencies;
 use reqwest::{Client, StatusCode};
 use serde_json::{Value, json};
@@ -130,7 +131,7 @@ async fn replay_mode(mode: &str) {
         history.extend_from_slice(payload["output"].as_array().unwrap());
         actual_turns.push(json!({"request":{"path":"/v1/responses","body":request},"response":response}));
     }
-    assert_reference_contract(mode, &actual_turns);
+    assert_reference_contract(mode, &actual_turns).await;
     for table in ["responses", "items", "conversations"] {
         let count: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {table}"))
             .fetch_one(pool.as_ref())
@@ -144,7 +145,26 @@ async fn replay_mode(mode: &str) {
     gateway.abort();
 }
 
-fn assert_reference_contract(mode: &str, actual_turns: &[Value]) {
+async fn assert_reference_contract(mode: &str, actual_turns: &[Value]) {
+    for turn in actual_turns {
+        if let Some(chunks) = turn["response"]["sse"].as_array() {
+            let stream: String = chunks.iter().map(|chunk| chunk.as_str().unwrap()).collect();
+            let original_request: RequestPayload = serde_json::from_value(turn["request"]["body"].clone()).unwrap();
+            let context = RequestContext {
+                enriched_request: original_request.clone(),
+                original_request,
+                multi_agent_tree: None,
+                new_input_items: Vec::new(),
+                response_id: "resp_strict_replay".to_owned(),
+                conversation_id: None,
+                conversation_version: None,
+                continuation: None,
+            };
+            decode_upstream(context, UpstreamBody::Sse(&stream))
+                .await
+                .expect("live gateway SSE must satisfy strict lifecycle validation");
+        }
+    }
     let cassette: support::Cassette = serde_json::from_value(json!({"turns":actual_turns})).unwrap();
     let actual = RecordedSession::from_cassette(&cassette).unwrap();
     let reference = RecordedSession::load(Path::new(&format!(

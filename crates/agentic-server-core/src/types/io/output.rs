@@ -32,8 +32,8 @@ pub struct OutputTextContent {
     pub text: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub annotations: Option<Vec<Value>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub logprobs: Option<Vec<OutputTextLogprob>>,
+    #[serde(default, deserialize_with = "deserialize_nullable_vec")]
+    pub logprobs: Vec<OutputTextLogprob>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -58,7 +58,7 @@ impl OutputTextContent {
         Self {
             text: text.into(),
             annotations: Some(vec![]),
-            logprobs: None,
+            logprobs: Vec::new(),
         }
     }
 }
@@ -1147,6 +1147,28 @@ mod tests {
     }
 
     #[test]
+    fn output_text_logprobs_default_to_an_array() {
+        for logprobs in [None, Some(Value::Null), Some(serde_json::json!([]))] {
+            let mut wire = serde_json::json!({"type": "output_text", "text": "OK", "annotations": []});
+            if let Some(logprobs) = logprobs {
+                wire["logprobs"] = logprobs;
+            }
+            let part: OutputMessageContent = serde_json::from_value(wire).unwrap();
+            let expected = serde_json::json!({"type": "output_text", "text": "OK", "annotations": [], "logprobs": []});
+            assert_eq!(serde_json::to_value(&part).unwrap(), expected);
+            assert_eq!(serde_json::to_value(InputContent::from(part)).unwrap(), expected);
+        }
+        for invalid in [serde_json::json!("invalid"), serde_json::json!([{}])] {
+            assert!(
+                serde_json::from_value::<OutputTextContent>(serde_json::json!({
+                    "text": "OK", "logprobs": invalid
+                }))
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
     fn attributed_message_preserves_text_metadata_on_continuation() {
         for content in [
             serde_json::json!({"type": "input_text", "text": "Review", "extension": "keep"}),
@@ -1161,8 +1183,12 @@ mod tests {
                 "role": if content["type"] == "input_text" { "user" } else { "assistant" },
                 "agent": {"agent_name": "/root/review"}, "status": "completed", "content": [content]});
             let item: OutputItem = serde_json::from_value(wire.clone()).unwrap();
-            assert_eq!(serde_json::to_value(&item).unwrap(), wire);
-            assert_eq!(serde_json::to_value(item.to_input_item().unwrap()).unwrap(), wire);
+            let mut expected = wire;
+            if expected["content"][0]["type"] == "output_text" && expected["content"][0].get("logprobs").is_none() {
+                expected["content"][0]["logprobs"] = serde_json::json!([]);
+            }
+            assert_eq!(serde_json::to_value(&item).unwrap(), expected);
+            assert_eq!(serde_json::to_value(item.to_input_item().unwrap()).unwrap(), expected);
         }
     }
 
@@ -1202,7 +1228,7 @@ mod tests {
                 "id": "msg_phase",
                 "role": "assistant",
                 "status": "completed",
-                "content": [{"type": "output_text", "text": "Review result.", "annotations": []}]
+                "content": [{"type": "output_text", "text": "Review result.", "annotations": [], "logprobs": []}]
             });
             if let Some(phase) = phase {
                 wire["phase"] = serde_json::json!(phase);
@@ -1270,7 +1296,7 @@ mod tests {
                 "id": "msg_answer",
                 "role": "assistant",
                 "status": "completed",
-                "content": [{"type": "output_text", "text": "The parser handles errors correctly.", "annotations": []}]
+                "content": [{"type": "output_text", "text": "The parser handles errors correctly.", "annotations": [], "logprobs": []}]
             })
         );
     }

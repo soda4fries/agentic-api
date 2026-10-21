@@ -111,6 +111,12 @@ fn normalize(value: &mut Value) {
         Value::Object(fields) => {
             // Output-item and JSON-RPC request IDs are allocated independently on replay.
             fields.remove("id");
+            // Older captures omit the now-canonical empty logprob array.
+            if fields.get("type").and_then(Value::as_str) == Some("output_text")
+                && fields.get("logprobs").is_none_or(Value::is_null)
+            {
+                fields.insert("logprobs".into(), json!([]));
+            }
             for field in fields.values_mut() {
                 normalize(field);
             }

@@ -1259,6 +1259,10 @@ depend on SSE or executor types. `TranslationContext` is an owned snapshot of th
 registry facts and request metadata needed for classification and restoration. It
 provides each round's tool classification and owns final restoration of public tool
 declarations, custom/namespace shapes, tool choice, and tool-search metadata.
+Output-text `logprobs` use the existing nullable-vector deserializer: missing and
+null values become an empty vector and serialize as `[]`. Wire normalization uses
+the same default so content parts agree with item and terminal snapshots;
+populated log probabilities are preserved through continuation and storage.
 
 Async client tools are marked from the same snapshot: the registry's async tool names
 (`ToolRegistry::async_tool_names`) are copied into the context. The dispatcher creates each
