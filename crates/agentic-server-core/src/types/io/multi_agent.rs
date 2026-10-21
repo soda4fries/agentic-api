@@ -2,7 +2,7 @@
 //!
 //! These values describe the public transcript, not executable collaboration commands or
 //! scheduler state. Request admission owns defaults and deployment limits. The gateway
-//! currently supports stored execution only; `store: true` is not a wire-type requirement.
+//! supports stored continuation and client-carried history with `store: false`.
 //! Deserializing these types does not enable multi-agent execution.
 
 use serde::{Deserialize, Serialize};

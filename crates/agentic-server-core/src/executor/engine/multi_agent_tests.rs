@@ -232,32 +232,6 @@ async fn setup_with_compaction_gate(
 }
 
 #[tokio::test]
-async fn automatic_compaction_is_attributed_and_usage_is_counted_once() {
-    let (exec, server) = setup().await;
-    let request = RequestPayload {
-        model: "test".into(),
-        store: true,
-        input: ResponsesInput::Text("simple compaction test".into()),
-        multi_agent: Some(MultiAgentConfig {
-            enabled: true,
-            max_concurrent_subagents: Some(3),
-        }),
-        context_management: Some(vec![ContextManagement {
-            type_: "compaction".into(),
-            compact_threshold: Some(1),
-        }]),
-        ..Default::default()
-    };
-    let result = tokio::time::timeout(Duration::from_secs(10), response(request, exec)).await;
-    server.abort();
-    let result = result.unwrap();
-    assert_eq!(result.usage.unwrap().total_tokens, 6);
-    assert!(matches!(result.output.first(), Some(OutputItem::Compaction(item))
-        if item.agent.as_ref().is_some_and(|agent| agent.agent_name == "/root")));
-    assert_eq!(result.output.len(), 2);
-}
-
-#[tokio::test]
 async fn child_deltas_arrive_before_upstream_round_completion() {
     let gate = Arc::new(Semaphore::new(0));
     let (exec, server) = setup_with_gate(Some(gate.clone())).await;

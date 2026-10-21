@@ -71,6 +71,16 @@ item history; the gateway neither rehydrates nor persists the turn. A stored
 but `store:false` does not store the response or append conversation items. An
 unstored response ID cannot be retrieved or used for HTTP continuation.
 
+Multi-agent HTTP requests also support `store:false`. Return all prior input and
+output items, including opaque `agent_message` content, then append new messages
+or matching client tool outputs. The gateway restores agent state from an
+authenticated client-carried checkpoint and writes no database rows. Re-declare
+the desired tools on each stateless request. For replay across gateway restarts
+or replicas, configure the same `AGENTIC_MULTI_AGENT_REPLAY_KEY` everywhere (a
+base64-encoded 32-byte secret); the default key lasts for the current process.
+Stateless multi-agent execution uses automatic per-agent compaction; the gateway's
+explicit `compaction_trigger` extension is unsupported in this mode.
+
 Executor-backed requests accept at most 64 MCP server declarations and 128
 discovered MCP tools. MCP discovery metadata shares the request's retained
 response budget (`[responses] max_retained_bytes`, default 8 MiB) with upstream
