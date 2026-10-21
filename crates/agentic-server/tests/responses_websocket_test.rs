@@ -1612,6 +1612,31 @@ fn sse_response_with_service_tier(response_id: &str, message_id: &str, text: &st
 }
 
 #[tokio::test]
+async fn websocket_forwards_provider_extensions_without_event_metadata() {
+    let mock = MockResponsesServer::start(vec![sse_response("resp_upstream", "msg_upstream", "OK")]).await;
+    let fixture = storage_backed_state(&mock.url).await;
+    let (gateway_url, _gateway) = spawn_gateway(fixture.state.clone()).await;
+    let mut ws = connect_responses_ws(&gateway_url).await;
+    send_json(
+        &mut ws,
+        json!({
+            "type": "response.create", "model": "test-model", "input": "hello",
+            "store": false, "generate": true, "stream_id": "provider-test",
+            "chat_template_kwargs": {"enable_thinking": false}, "top_k": 20
+        }),
+    )
+    .await;
+    recv_until_completed(&mut ws).await;
+    let requests = mock.request_bodies().await;
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0]["chat_template_kwargs"], json!({"enable_thinking": false}));
+    assert_eq!(requests[0]["top_k"], 20);
+    for field in ["type", "generate", "stream_id", "store"] {
+        assert!(requests[0].get(field).is_none(), "{field} is not a provider extension");
+    }
+}
+
+#[tokio::test]
 async fn websocket_preserves_actual_service_tier_without_inheriting_request_tier() {
     let mock = MockResponsesServer::start(vec![
         sse_response_with_service_tier("resp_upstream_1", "msg_upstream_1", "first", "default"),

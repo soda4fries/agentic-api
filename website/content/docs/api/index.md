@@ -71,6 +71,11 @@ item history; the gateway neither rehydrates nor persists the turn. A stored
 but `store:false` does not store the response or append conversation items. An
 unstored response ID cannot be retrieved or used for HTTP continuation.
 
+Unmodeled top-level provider parameters, such as `chat_template_kwargs` and `top_k`,
+are forwarded unchanged on each inference round. Their interpretation belongs to
+the upstream provider. Known request fields still use the gateway's validation and
+normalization rules.
+
 Multi-agent HTTP requests also support `store:false`. Return all prior input and
 output items, including opaque `agent_message` content, then append new messages
 or matching client tool outputs. The gateway restores agent state from an
@@ -92,9 +97,10 @@ rounds and gateway tool output.
 gateway orchestrate subagents for one response and return attributed
 `multi_agent_call`, `multi_agent_call_output`, and `agent_message` items.
 `max_concurrent_subagents` defaults to 3 and must be positive. Multi-agent
-requests require `store: true`, reject `max_tool_calls` and reasoning summaries,
+requests reject `max_tool_calls` and reasoning summaries,
 and run over HTTP JSON and SSE only; the WebSocket transport rejects them.
-Continue the agent tree with `previous_response_id`. See
+Continue a stored agent tree with `previous_response_id`, or replay the complete
+item history with `store:false` as described above. See
 [HTTP multi-agent execution](https://github.com/vllm-project/agentic-api/blob/main/ARCHITECTURE.md#http-multi-agent-execution).
 
 `prompt_cache_key` is forwarded unchanged on direct and executor-backed HTTP

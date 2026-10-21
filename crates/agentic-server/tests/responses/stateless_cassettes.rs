@@ -252,6 +252,9 @@ async fn recorded_store_false_mixed_tools_replay_full_history() {
             history.extend(input_items(&body["input"]));
             body["store"] = json!(false);
             body["input"] = json!(history);
+            // Exercise provider extensions with unchanged recorded model responses.
+            body["chat_template_kwargs"] = json!({"enable_thinking": false});
+            body["top_k"] = json!(20);
             body.as_object_mut().unwrap().remove("previous_response_id");
             let response = client
                 .post(format!("{url}/v1/responses"))
@@ -276,6 +279,8 @@ async fn recorded_store_false_mixed_tools_replay_full_history() {
         for request in captured.iter() {
             common::assert_lowered_mixed_upstream(request);
             assert!(request.get("previous_response_id").is_none());
+            assert_eq!(request["chat_template_kwargs"], json!({"enable_thinking": false}));
+            assert_eq!(request["top_k"], 20);
         }
         let input = captured[1]["input"].as_array().unwrap();
         for item in history.iter().filter(|item| {
