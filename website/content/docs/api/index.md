@@ -71,6 +71,11 @@ item history; the gateway neither rehydrates nor persists the turn. A stored
 but `store:false` does not store the response or append conversation items. An
 unstored response ID cannot be retrieved or used for HTTP continuation.
 
+Unmodeled top-level provider parameters, such as `chat_template_kwargs` and `top_k`,
+are forwarded unchanged on each inference round. Their interpretation belongs to
+the upstream provider. Known request fields still use the gateway's validation and
+normalization rules.
+
 Executor-backed requests accept at most 64 MCP server declarations and 128
 discovered MCP tools. MCP discovery metadata shares the request's retained
 response budget (`[responses] max_retained_bytes`, default 8 MiB) with upstream

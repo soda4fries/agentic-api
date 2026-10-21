@@ -35,12 +35,14 @@ async fn custom_tool_round_trip_uses_client_history_without_storage() {
         let (url, gateway) = spawn_gateway(fixture.state.clone()).await;
         let client = reqwest::Client::new();
         let tools = json!([{"type":"custom", "name":"echo", "description":"Echo raw text."}]);
+        let kwargs = json!({"enable_thinking": false, "nested": {"values": [1, null, "kept"]}});
         let mut input = vec![json!({"role":"user", "content":"echo hello"})];
         let mut response_ids = Vec::new();
         for turn in 0..2 {
             let response = client
                 .post(format!("{url}/v1/responses"))
-                .json(&json!({"model":"test", "store":false, "stream":stream, "tools":tools, "input":input}))
+                .json(&json!({"model":"test", "store":false, "stream":stream, "tools":tools,
+                    "input":input, "chat_template_kwargs":kwargs, "top_k":20, "x_provider_option":null}))
                 .send()
                 .await
                 .unwrap();
@@ -73,6 +75,9 @@ async fn custom_tool_round_trip_uses_client_history_without_storage() {
         let captured = requests.lock().await;
         assert_eq!(captured.len(), 2);
         for request in captured.iter() {
+            assert_eq!(request["chat_template_kwargs"], kwargs);
+            assert_eq!(request["top_k"], 20);
+            assert_eq!(request.get("x_provider_option"), Some(&Value::Null));
             assert!(request.get("store").is_none());
             assert!(request.get("previous_response_id").is_none());
             assert!(request.get("conversation").is_none());

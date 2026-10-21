@@ -111,6 +111,7 @@ fn request_payload(model: String, input: ResponsesInput, instructions: Option<St
         context_management: None,
         background: None,
         prompt: None,
+        extra: HashMap::new(),
     }
 }
 

@@ -175,6 +175,10 @@ what stops the HTTP catalog and a launcher catalog from disagreeing about image 
 The HTTP Responses handler parses a typed `RequestPayload` and always builds an
 `ExecuteRequest` against `state.exec_ctx`. Both `store: true` and `store: false`
 requests use input normalization, tool normalization, validation, and the tool loop.
+Unmodeled top-level provider parameters, such as `chat_template_kwargs` and `top_k`,
+are retained in `RequestPayload::extra` and borrowed by `UpstreamRequest` for forwarding
+on each inference round. Known fields keep their typed validation and conversion;
+gateway state controls and WebSocket event metadata are not provider extensions.
 With `store: false` and no state IDs, execution does not rehydrate stored history or
 persist the turn. Clients supply the complete item history in `input`, including
 prior output items and tool call outputs. `previous_response_id` still loads an
