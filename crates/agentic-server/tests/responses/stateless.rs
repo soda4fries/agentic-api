@@ -78,7 +78,7 @@ async fn custom_tool_round_trip_uses_client_history_without_storage() {
             assert_eq!(request["chat_template_kwargs"], kwargs);
             assert_eq!(request["top_k"], 20);
             assert_eq!(request.get("x_provider_option"), Some(&Value::Null));
-            assert!(request.get("store").is_none());
+            assert_eq!(request["store"], false);
             assert!(request.get("previous_response_id").is_none());
             assert!(request.get("conversation").is_none());
             assert_eq!(request["tools"][0]["type"], "function");

@@ -1857,7 +1857,7 @@ async fn test_store_false_executes_large_json_body() {
     assert_eq!(resp.status(), 200);
     let requests = requests.lock().await;
     assert_eq!(requests.len(), 1);
-    assert!(requests[0].get("store").is_none());
+    assert_eq!(requests[0]["store"], false);
     assert_eq!(requests[0]["stream"], false);
     assert_eq!(requests[0]["input"][0]["content"].as_str().unwrap().len(), 100 * 1024);
 }
@@ -2634,7 +2634,7 @@ async fn test_store_false_preserves_image_content_extensions() {
     let forwarded: serde_json::Value = serde_json::from_slice(&requests[0]).unwrap();
     let original: serde_json::Value = serde_json::from_str(&request_body).unwrap();
     assert_eq!(forwarded["input"], original["input"]);
-    assert!(forwarded.get("store").is_none());
+    assert_eq!(forwarded["store"], false);
 }
 
 #[tokio::test]

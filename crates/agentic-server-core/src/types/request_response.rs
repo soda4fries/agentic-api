@@ -138,6 +138,9 @@ pub enum UpstreamRequestError {
 
 #[derive(Debug, Serialize)]
 pub struct UpstreamRequest<'a> {
+    /// Disable upstream storage when the caller disables gateway storage.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub store: Option<bool>,
     pub model: &'a str,
     pub input: Cow<'a, ResponsesInput>,
     pub stream: bool,
@@ -379,6 +382,7 @@ impl RequestPayload {
         let tool_choice = CodexNamespaceHandler.resolve_tool_choice(namespace_map.as_ref(), self.tool_choice.as_ref());
         CustomHandler::validate_tool_choice(declarations.as_deref(), &tool_choice)?;
         Ok(UpstreamRequest {
+            store: (!self.store).then_some(false),
             model: &self.model,
             input,
             stream,
@@ -520,11 +524,11 @@ mod tests {
         for stream in [false, true] {
             let upstream = serde_json::to_value(restored.to_upstream_request(stream).unwrap()).unwrap();
             assert_eq!(upstream["stream"], stream);
+            assert_eq!(upstream["store"], false);
             for key in ["chat_template_kwargs", "top_k", "x_provider_option"] {
                 assert_eq!(upstream.get(key), wire.get(key));
             }
             for key in [
-                "store",
                 "conversation_id",
                 "conversation",
                 "background",

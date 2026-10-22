@@ -1631,7 +1631,8 @@ async fn websocket_forwards_provider_extensions_without_event_metadata() {
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0]["chat_template_kwargs"], json!({"enable_thinking": false}));
     assert_eq!(requests[0]["top_k"], 20);
-    for field in ["type", "generate", "stream_id", "store"] {
+    assert_eq!(requests[0]["store"], false);
+    for field in ["type", "generate", "stream_id"] {
         assert!(requests[0].get(field).is_none(), "{field} is not a provider extension");
     }
 }

@@ -169,3 +169,81 @@ async fn malformed_client_json_still_returns_json_error_envelope() {
     let body: serde_json::Value = response.json().await.unwrap();
     assert_eq!(body["error"]["type"], "invalid_request_error");
 }
+
+#[tokio::test]
+async fn initial_streaming_error_preserves_http_status_and_headers() {
+    for store in [false, true] {
+        let body = "rate limited";
+        let (llm_url, upstream) =
+            spawn_error_upstream(StatusCode::TOO_MANY_REQUESTS, "text/plain", body, rate_limit_headers()).await;
+        let (gateway_url, gateway) = spawn_gateway(test_state(&test_config(&llm_url))).await;
+        let response = reqwest::Client::new()
+            .post(format!("{gateway_url}/v1/responses"))
+            .json(&serde_json::json!({"model":"test", "input":"hi", "store":store, "stream":true}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(response.headers()["retry-after"], "7");
+        assert_eq!(response.headers()["x-request-id"], "req_example");
+        assert_eq!(response.headers()["content-type"], "text/plain");
+        assert_eq!(response.text().await.unwrap(), body);
+        gateway.abort();
+        upstream.abort();
+    }
+}
+
+#[tokio::test]
+async fn responses_executor_forwards_filtered_headers_and_preserves_auth_precedence() {
+    for stream in [false, true] {
+        let (sender, mut received) = tokio::sync::mpsc::channel(4);
+        let app = Router::new().route(
+            "/v1/responses",
+            post(move |headers: HeaderMap| {
+                let sender = sender.clone();
+                async move {
+                    sender.send(headers).await.unwrap();
+                    (StatusCode::TOO_MANY_REQUESTS, "rate limited")
+                }
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let upstream = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let (gateway_url, gateway) = spawn_gateway(test_state(&test_config(&url))).await;
+        for (caller_auth, api_key, expected_auth) in [
+            (None, Some("caller-api-key"), None),
+            (Some("Bearer caller-token"), None, Some("Bearer caller-token")),
+            (
+                Some("Basic caller-token"),
+                Some("caller-api-key"),
+                Some("Basic caller-token"),
+            ),
+            (None, None, Some("Bearer test-key")),
+        ] {
+            let mut request = reqwest::Client::new()
+                .post(format!("{gateway_url}/v1/responses"))
+                .header("openai-organization", "org_caller")
+                .header("openai-project", "proj_caller")
+                .header("connection", "x-client-hop")
+                .header("x-client-hop", "must-not-forward")
+                .json(&serde_json::json!({"model":"test", "input":"hi", "store":false, "stream":stream}));
+            if let Some(auth) = caller_auth {
+                request = request.header("authorization", auth);
+            }
+            if let Some(key) = api_key {
+                request = request.header("x-api-key", key);
+            }
+            let response = request.send().await.unwrap();
+            assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+            let headers = received.recv().await.unwrap();
+            assert_eq!(headers.get("authorization").map(|v| v.to_str().unwrap()), expected_auth);
+            assert_eq!(headers.get("x-api-key").map(|v| v.to_str().unwrap()), api_key);
+            assert_eq!(headers["openai-organization"], "org_caller");
+            assert_eq!(headers["openai-project"], "proj_caller");
+            assert!(headers.get("x-client-hop").is_none());
+        }
+        gateway.abort();
+        upstream.abort();
+    }
+}

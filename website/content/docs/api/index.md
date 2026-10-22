@@ -74,7 +74,16 @@ unstored response ID cannot be retrieved or used for HTTP continuation.
 Unmodeled top-level provider parameters, such as `chat_template_kwargs` and `top_k`,
 are forwarded unchanged on each inference round. Their interpretation belongs to
 the upstream provider. Known request fields still use the gateway's validation and
-normalization rules.
+normalization rules. `store:false` is also forwarded to the upstream on every
+inference round. Caller authentication and end-to-end routing headers are preserved;
+hop-by-hop headers are filtered. An upstream HTTP error before the first streaming
+event retains its status, body, and headers, including `Retry-After`.
+
+Full upstream body compatibility remains a separate capability: typed execution
+rejects unsupported file/audio input and text formats, prepares plaintext reasoning
+for vLLM, and rejects encrypted-only reasoning that vLLM cannot replay. Reasoning
+context and compatible opaque state support are tracked in
+[#444](https://github.com/vllm-project/agentic-api/issues/444).
 
 Executor-backed requests accept at most 64 MCP server declarations and 128
 discovered MCP tools. MCP discovery metadata shares the request's retained

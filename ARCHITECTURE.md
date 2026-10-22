@@ -186,6 +186,18 @@ available stored parent; `store: false` prevents the new response from being sto
 An explicit `conversation` loads its stored history, but `store: false` does not
 append the new input/output items or store the response.
 
+`UpstreamRequest` carries `store:false` whenever gateway storage is disabled.
+Typed admission still rejects unsupported body shapes. Provider reasoning context
+and opaque-state compatibility require coordinated backend work, tracked in
+[#444](https://github.com/vllm-project/agentic-api/issues/444).
+
+HTTP execution supplies request-scoped headers through `with_upstream_headers`, using
+the proxy's existing end-to-end filter and authentication fallback. These headers
+travel through every inference and compaction round, without entering stored state.
+`run_http` polls the same stream-owned producer until the first client frame, allowing
+initial upstream failures to retain their HTTP status and processed response headers.
+Later failures remain SSE events. Embedded `run` callers keep lazy stream startup.
+
 The Messages handler selects `run_messages_loop`/`run_messages_stream` for requests
 that need gateway execution. Other requests and pass-through endpoints forward to
 the upstream through `agentic_core::proxy`.
