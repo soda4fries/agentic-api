@@ -120,12 +120,20 @@ using `store:false` and full-history replay. Enable `gitmcp.io` in the gateway's
 `AGENTIC_MCP_ALLOWED_HOSTS` and configure its web-search provider before recording.
 The recorder's shell commands receive fixture outputs and are not executed.
 
-Gateway responses include an opaque root `agent_message` containing authenticated
-agent state. Replay this item unchanged with the complete history. The gateway
-uses it to restore private agent contexts and tool-call ownership without database
-reads or writes when no stored ID is supplied. To replay across gateway restarts
+Current gateway responses end with a root-attributed `compaction` item containing
+authenticated agent state in opaque `encrypted_content`. Replay output unchanged,
+or discard all items before the latest compaction before appending new input.
+The gateway uses it to restore private agent contexts and tool-call ownership without
+database reads or writes when no stored ID is supplied. To replay across gateway restarts
 or replicas, set the same base64-encoded 32-byte `AGENTIC_MULTI_AGENT_REPLAY_KEY` on
 all instances; its default random key lasts for the current process.
+
+The existing gateway YAML captures predate this representation and contain a
+root-to-root `agent_message` checkpoint. They remain historical observations, not
+evidence of the current compaction wire shape. The live HTTP tests below use newly
+emitted gateway compaction items for continuation; they do not reuse those old
+encrypted checkpoints. Refresh gateway captures with the recorder when the model
+and external tools are available; do not rewrite their captured output by hand.
 
 The recorded OpenAI `gpt-5.6-sol` SSE trial completes in two turns with
 `store:false` on both: three delegated agents perform web search, MCP lookup,
@@ -160,9 +168,13 @@ cargo test -p agentic-server --test responses_test mixed_tools_store_false_
 
 These tests run both JSON and SSE using captured model, You search, and MCP
 responses from `../store_false/multi-agent-store-false-*-dependencies-*.yaml`.
-They replay each gateway response's own history and encrypted checkpoint, execute
-hosted tool routing, compare the resulting session with the OpenAI contract, check
+They replay each gateway response's own history and encrypted compaction, both with
+full history and with its prefix pruned. They execute hosted tool routing, compare
+the resulting session with the recorded OpenAI tool contract, check
 response retrieval returns 404, and assert zero response/item/conversation rows.
+They also reject missing or tampered compaction state before consuming any recorded
+dependency requests. The original OpenAI mixed-tools captures do not exercise
+compaction; they establish tool-call and continuation behavior, not compaction parity.
 Every recorded model and tool RPC must be consumed. Matching preserves request
 content, tool arguments, and call IDs; it normalizes absent/null output-text
 `logprobs` to the canonical empty array and ignores generated item/JSON-RPC IDs and

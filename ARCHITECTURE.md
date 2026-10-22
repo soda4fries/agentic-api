@@ -1047,14 +1047,21 @@ uses the existing response/conversation stores.
 Continuation restoration discards the latter duplicate but retains the tree.
 
 With `store:false`, HTTP execution writes no response, item, conversation, or tree rows.
-The coordinator emits an encrypted checkpoint in a root-attributed `agent_message`
-at the response boundary. The client replays its complete input and output history,
-including this opaque item, followed by new messages or matching tool outputs.
-`multi_agent/replay.rs` authenticates the checkpoint and checks its history digest
-using canonical public item serialization; model-facing tool lowering is not used
-for that check. The existing `ValidatedTreeCheckpoint` and pending-call registry
+The coordinator emits the authenticated tree as a root-attributed `compaction` item
+at the response boundary. Its `encrypted_content` is opaque to clients; the serialization
+and encryption format are internal implementation details. Clients append output items
+unchanged and may discard every item before the latest compaction. The complete tree
+includes private per-agent histories, mailboxes, discovered tools, and pending client
+calls, so pruning public history does not lose the state needed for continuation.
+`multi_agent/replay.rs` authenticates and bounds the tree before restoring it. The
+compaction supersedes its public prefix whether that prefix is retained or pruned;
+there is no public-history digest or client-side ciphertext inspection requirement.
+A collaboration transcript missing its final compaction item is rejected even if the
+caller omits `multi_agent`. The existing `ValidatedTreeCheckpoint` and pending-call registry
 then restore agent histories, mailboxes, discovered tools, and call ownership.
-Only the input after the checkpoint is applied as new work. Stored parent IDs and
+Only the input after the checkpoint is applied as new work, including when a replay
+switches to `store:true` with explicit root compaction. The compactor separates new
+input before removing the trigger so replay offsets cannot shift. Stored parent IDs and
 explicit conversations can still supply a tree; `store:false` leaves the new turn unstored.
 
 `AGENTIC_MULTI_AGENT_REPLAY_KEY` accepts a base64-encoded 32-byte deployment secret.

@@ -186,6 +186,11 @@ async fn replay(State(state): State<Arc<Mutex<Replay>>>, method: Method, uri: Ur
     let turn = state.turns[index].take().unwrap();
     let mut expected = turn.request.body;
     let mut actual = body.clone();
+    if uri.path() == "/v1/responses" {
+        // These captures predate explicit upstream storage forwarding. Require
+        // store:false on every live model round rather than ignoring the field.
+        expected.as_object_mut().unwrap().entry("store").or_insert(json!(false));
+    }
     normalize(&mut expected);
     normalize(&mut actual);
     if actual != expected {

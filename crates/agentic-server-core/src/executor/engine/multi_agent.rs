@@ -237,11 +237,7 @@ impl MultiAgentRun {
             &CheckpointLimits::for_response(self.max_retained_bytes),
         )?;
         if !pipeline.request.original_request.store {
-            let item = tree.replay_item(
-                &pipeline.request.new_input_items,
-                self.completed_items.values(),
-                self.max_retained_bytes,
-            )?;
+            let item = tree.replay_item(self.max_retained_bytes)?;
             self.publish(item, pipeline).await?;
         }
         pipeline.request.multi_agent_tree = Some(tree);

@@ -210,20 +210,14 @@ fn from_input(ctx: &mut RequestContext, max_bytes: usize) -> ExecutorResult<()> 
         return apply_agent_tree(ctx, tree);
     }
 
-    if ctx
-        .enriched_request
-        .multi_agent
-        .as_ref()
-        .is_some_and(|config| config.enabled)
-        && ctx.new_input_items.iter().filter_map(InOutItem::as_input).any(|item| {
-            matches!(
-                item.as_ref(),
-                InputItem::MultiAgentCall(_) | InputItem::MultiAgentCallOutput(_) | InputItem::AgentMessage(_)
-            )
-        })
-    {
+    if ctx.new_input_items.iter().filter_map(InOutItem::as_input).any(|item| {
+        matches!(
+            item.as_ref(),
+            InputItem::MultiAgentCall(_) | InputItem::MultiAgentCallOutput(_) | InputItem::AgentMessage(_)
+        )
+    }) {
         return Err(ExecutorError::InvalidRequest(
-            "multi-agent replay requires the complete gateway history, including its replay state item".into(),
+            "multi-agent replay requires its final compaction item followed by new input".into(),
         ));
     }
 

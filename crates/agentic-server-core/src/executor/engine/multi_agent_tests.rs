@@ -14,6 +14,8 @@ mod root_completion;
 mod service_tier;
 #[path = "multi_agent_tests/shell_continuation.rs"]
 mod shell_continuation;
+#[path = "multi_agent_tests/stateless_replay.rs"]
+mod stateless_replay;
 use crate::executor::{
     ExecuteRequest,
     modes::{ConversationHandler, ResponseHandler},
@@ -144,6 +146,7 @@ async fn setup_with_compaction_gate(
         let compaction_gate = compaction_gate.clone();
         async move {
             assert!(request.get("multi_agent").is_none());
+            assert!(!request.to_string().contains("enc_"), "encrypted replay state must not reach inference");
             assert!(request["input"].as_array().unwrap().iter().all(|item| !matches!(
                 item["type"].as_str(), Some("multi_agent_call" | "multi_agent_call_output" | "agent_message"))));
             let input = request["input"].as_array().unwrap();

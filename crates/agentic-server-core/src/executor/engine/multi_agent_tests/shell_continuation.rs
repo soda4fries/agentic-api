@@ -6,7 +6,13 @@ use crate::types::io::{AgentMessageContent, InOutItem};
 
 pub(super) fn shell_review_output(request: &Value) -> Option<Vec<Value>> {
     let input = request["input"].as_array().unwrap();
-    if !input.iter().any(|item| item["content"] == "local shell review") {
+    // Root compaction can replace the original prompt before the child replies.
+    if !input.iter().any(|item| {
+        item["content"] == "local shell review"
+            || item["content"].as_str().is_some_and(|text| {
+                text.starts_with("Message Type: FINAL_ANSWER") && text.contains("shell result is 55")
+            })
+    }) {
         return None;
     }
     let guidance = input.last().unwrap()["content"].as_str().unwrap();
@@ -210,30 +216,27 @@ async fn child_shell_call_replays_full_history_without_storage() {
             Err(ExecutorError::InvalidRequest(message)) if message.contains("compaction_trigger")));
         let mut damaged = next.clone();
         let mut items = history.clone();
-        items.remove(0);
-        damaged.input = ResponsesInput::Items(items);
-        assert!(rehydrate_conversation(damaged, &exec).await.is_err());
-        let mut damaged = next.clone();
-        let mut items = history.clone();
         items.remove(items.len() - 2); // Omit the client-carried checkpoint.
         damaged.input = ResponsesInput::Items(items);
         assert!(rehydrate_conversation(damaged, &exec).await.is_err());
         let mut damaged = next.clone();
         let mut wire = serde_json::to_value(&history).unwrap();
         let index = wire.as_array().unwrap().len() - 2;
-        let mut encrypted = wire[index]["content"][0]["encrypted_content"]
-            .as_str()
-            .unwrap()
-            .to_owned();
+        let mut encrypted = wire[index]["encrypted_content"].as_str().unwrap().to_owned();
         let replacement = if &encrypted[30..31] == "A" { "B" } else { "A" };
         encrypted.replace_range(30..31, replacement);
-        wire[index]["content"][0]["encrypted_content"] = json!(encrypted);
+        wire[index]["encrypted_content"] = json!(encrypted);
         damaged.input = serde_json::from_value(wire).unwrap();
         assert!(rehydrate_conversation(damaged, &exec).await.is_err());
 
         // Replay is independent of a response session and can branch without consuming state.
-        for _ in 0..2 {
-            let completed = response(next.clone(), exec.clone()).await;
+        for prune in [false, true] {
+            let mut replay = next.clone();
+            if prune {
+                replay.input =
+                    serde_json::from_value(serde_json::to_value(&history[history.len() - 2..]).unwrap()).unwrap();
+            }
+            let completed = response(replay, exec.clone()).await;
             assert_eq!(completed.status, "completed");
             assert!(
                 completed

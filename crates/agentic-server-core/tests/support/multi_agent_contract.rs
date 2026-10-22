@@ -101,10 +101,22 @@ impl RecordedSession {
                         if turn.request.body.previous_response_id.is_some() || terminal["store"] != false {
                             return Err(mismatch("stateless replay must not reference or store a response"));
                         }
-                        if !items.starts_with(&replay_history) {
+                        let retained = if items.starts_with(&replay_history) {
+                            replay_history.as_slice()
+                        } else if let Some(index) = replay_history.iter().rposition(|item| item["type"] == "compaction")
+                        {
+                            // The public compaction contract permits dropping its
+                            // entire prefix without losing pending client calls.
+                            &replay_history[index..]
+                        } else {
                             return Err(mismatch("stateless continuation changed or omitted public history"));
+                        };
+                        if !items.starts_with(retained) {
+                            return Err(mismatch(
+                                "stateless continuation changed or omitted its compacted history",
+                            ));
                         }
-                        let new_items = items[replay_history.len()..].to_vec();
+                        let new_items = items[retained.len()..].to_vec();
                         replay_history.clone_from(items);
                         replay_history.extend(
                             terminal["output"]
