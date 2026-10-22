@@ -7,16 +7,17 @@ use tracing::debug;
 use std::sync::Arc;
 
 use agentic_core::executor::{ExecuteRequest, compact_response as execute_compaction};
+use agentic_core::proxy::{ProxyAuth, upstream_request_headers};
 use agentic_core::types::request_response::{CompactRequest, RequestPayload};
 
 use super::super::common::{executor_error_response, extract_bearer, read_json, sse_response};
 use crate::app::AppState;
 
 async fn execute_responses(state: &AppState, parts: Parts, payload: RequestPayload) -> Response {
-    let auth = extract_bearer(&parts.headers, state.openai_api_key.as_deref());
+    let headers = upstream_request_headers(&parts.headers, &state.proxy_state.config, ProxyAuth::OpenAiBearer);
     match ExecuteRequest::new(payload, Arc::clone(&state.exec_ctx))
-        .with_auth(auth)
-        .run()
+        .with_upstream_headers(headers)
+        .run_http()
         .await
     {
         Ok(Either::Left(response_payload)) => axum::Json(response_payload).into_response(),
