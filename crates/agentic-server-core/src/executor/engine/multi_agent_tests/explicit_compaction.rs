@@ -2,6 +2,7 @@
 use super::*;
 use crate::executor::{pending_calls::resolved_prefix_len, rehydrate::rehydrate_conversation};
 use crate::types::agent_tree::StoredTreeSnapshot;
+use crate::utils::common::deserialize_from_value;
 
 fn trigger(previous: Option<&str>, stream: bool) -> RequestPayload {
     RequestPayload {
@@ -130,7 +131,7 @@ async fn automatic_compaction_is_attributed_and_usage_is_counted_once() {
             let mut history = request.input.clone().into_canonical_items();
             history.extend(result.output.into_iter().map(Into::into));
             let mut continuation = request;
-            continuation.input = serde_json::from_value(serde_json::to_value(history).unwrap()).unwrap();
+            continuation.input = deserialize_from_value(serde_json::to_value(history).unwrap()).unwrap();
             let ctx = rehydrate_conversation(continuation, &exec).await.unwrap();
             let tree = ctx.multi_agent_tree.unwrap().into_snapshot();
             assert!(

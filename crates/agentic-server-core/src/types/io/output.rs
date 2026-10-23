@@ -1086,6 +1086,7 @@ impl OutputItem {
 mod tests {
     use super::*;
     use crate::types::io::{InputContent, InputItem, InputMessageContent};
+    use crate::utils::common::deserialize_from_value;
 
     /// `OpenAI` marks async calls with `async: true` and omits the field on other calls; some
     /// upstream servers send `async: null`, which must read as not async.
@@ -1153,14 +1154,14 @@ mod tests {
             if let Some(logprobs) = logprobs {
                 wire["logprobs"] = logprobs;
             }
-            let part: OutputMessageContent = serde_json::from_value(wire).unwrap();
+            let part: OutputMessageContent = deserialize_from_value(wire).unwrap();
             let expected = serde_json::json!({"type": "output_text", "text": "OK", "annotations": [], "logprobs": []});
             assert_eq!(serde_json::to_value(&part).unwrap(), expected);
             assert_eq!(serde_json::to_value(InputContent::from(part)).unwrap(), expected);
         }
         for invalid in [serde_json::json!("invalid"), serde_json::json!([{}])] {
             assert!(
-                serde_json::from_value::<OutputTextContent>(serde_json::json!({
+                deserialize_from_value::<OutputTextContent>(serde_json::json!({
                     "text": "OK", "logprobs": invalid
                 }))
                 .is_err()

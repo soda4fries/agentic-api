@@ -2,6 +2,7 @@
 #[path = "multi_agent_dependencies.rs"]
 mod dependencies;
 
+use agentic_core::utils::common::deserialize_from_value;
 use std::fs::read_to_string;
 use std::path::Path;
 use std::sync::Arc;
@@ -126,7 +127,7 @@ async fn replay_mode(mode: &str, prune: bool) {
             json!({"body": serde_json::from_str::<Value>(&text).unwrap()})
         };
         let payload = terminal(&response);
-        let typed: ResponsePayload = serde_json::from_value(payload.clone()).unwrap();
+        let typed: ResponsePayload = deserialize_from_value(payload.clone()).unwrap();
         let retrieval = client
             .get(format!("{url}/v1/responses/{}", typed.id))
             .bearer_auth("test-key")
@@ -206,7 +207,7 @@ async fn assert_reference_contract(mode: &str, actual_turns: &[Value]) {
         );
         if let Some(chunks) = turn["response"]["sse"].as_array() {
             let stream: String = chunks.iter().map(|chunk| chunk.as_str().unwrap()).collect();
-            let original_request: RequestPayload = serde_json::from_value(turn["request"]["body"].clone()).unwrap();
+            let original_request: RequestPayload = deserialize_from_value(turn["request"]["body"].clone()).unwrap();
             let context = RequestContext {
                 enriched_request: original_request.clone(),
                 original_request,
@@ -222,7 +223,7 @@ async fn assert_reference_contract(mode: &str, actual_turns: &[Value]) {
                 .expect("live gateway SSE must satisfy strict lifecycle validation");
         }
     }
-    let cassette: support::Cassette = serde_json::from_value(json!({"turns":actual_turns})).unwrap();
+    let cassette: support::Cassette = deserialize_from_value(json!({"turns":actual_turns})).unwrap();
     let actual = RecordedSession::from_cassette(&cassette).unwrap();
     let reference = RecordedSession::load(Path::new(&format!(
         "{DIR}/multi-agent-store-false-openai-reference-mixed-tools-gpt-5.6-sol-{mode}.yaml"

@@ -3,6 +3,7 @@ use super::*;
 use crate::StorageError;
 use crate::executor::{prepare_non_generating_turn, rehydrate::rehydrate_conversation};
 use crate::types::io::{AgentMessageContent, InOutItem};
+use crate::utils::common::deserialize_from_value;
 
 pub(super) fn shell_review_output(request: &Value) -> Option<Vec<Value>> {
     let input = request["input"].as_array().unwrap();
@@ -181,7 +182,7 @@ async fn child_shell_call_replays_full_history_without_storage() {
         context.conv_handler = ConversationHandler::new(ConversationStore::new(pool.clone()));
         context.resp_handler = ResponseHandler::new(ResponseStore::new(pool.clone()));
         let exec = Arc::new(context);
-        let request: RequestPayload = serde_json::from_value(json!({
+        let request: RequestPayload = deserialize_from_value(json!({
             "model":"test", "store":false, "stream":stream, "input":"local shell review",
             "multi_agent":{"enabled":true,"max_concurrent_subagents":3},
             "tools":[{"type":"shell","environment":{"type":"local"}}]
@@ -200,7 +201,7 @@ async fn child_shell_call_replays_full_history_without_storage() {
         let mut history = request.input.clone().into_canonical_items();
         history.extend(first.output.clone().into_iter().map(InOutItem::Output));
         history.push(
-            serde_json::from_value(json!({
+            deserialize_from_value(json!({
                 "type":"shell_call_output", "call_id":call.call_id,
                 "output":[{"stdout":"55","stderr":"","outcome":{"type":"exit","exit_code":0}}]
             }))
@@ -208,7 +209,7 @@ async fn child_shell_call_replays_full_history_without_storage() {
         );
         // Exercise the actual public JSON input decoder, including output -> input conversion.
         let mut next = request.clone();
-        next.input = serde_json::from_value(serde_json::to_value(&history).unwrap()).unwrap();
+        next.input = deserialize_from_value(serde_json::to_value(&history).unwrap()).unwrap();
         let mut triggered = next.clone();
         triggered.multi_agent = None; // The replayed tree restores the effective mode.
         triggered.input.push(InputItem::CompactionTrigger);
@@ -226,7 +227,7 @@ async fn child_shell_call_replays_full_history_without_storage() {
         let replacement = if &encrypted[30..31] == "A" { "B" } else { "A" };
         encrypted.replace_range(30..31, replacement);
         wire[index]["encrypted_content"] = json!(encrypted);
-        damaged.input = serde_json::from_value(wire).unwrap();
+        damaged.input = deserialize_from_value(wire).unwrap();
         assert!(rehydrate_conversation(damaged, &exec).await.is_err());
 
         // Replay is independent of a response session and can branch without consuming state.
@@ -234,7 +235,7 @@ async fn child_shell_call_replays_full_history_without_storage() {
             let mut replay = next.clone();
             if prune {
                 replay.input =
-                    serde_json::from_value(serde_json::to_value(&history[history.len() - 2..]).unwrap()).unwrap();
+                    deserialize_from_value(serde_json::to_value(&history[history.len() - 2..]).unwrap()).unwrap();
             }
             let completed = response(replay, exec.clone()).await;
             assert_eq!(completed.status, "completed");

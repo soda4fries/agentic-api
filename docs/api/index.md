@@ -418,6 +418,12 @@ window of retained user messages plus one `compaction` item. See
 [Responses compaction](../guides/responses-compaction.md) for request examples,
 automatic threshold management, and the local plaintext limitation.
 
+Multi-agent trees are unsupported on this endpoint, including those restored from
+client-carried checkpoints or `previous_response_id`; these requests return HTTP 400
+before inference. Multi-agent execution uses automatic per-agent compaction through
+`/v1/responses`, matching OpenAI's
+[multi-agent limitations](https://developers.openai.com/api/docs/guides/responses-multi-agent#limitations).
+
 ### `WS /v1/responses`
 
 The same path accepts WebSocket upgrades for Codex-style Responses

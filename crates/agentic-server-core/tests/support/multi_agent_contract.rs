@@ -1,6 +1,7 @@
 //! Integration-only comparison of independently recorded provider exchanges.
 #[path = "multi_agent_code_interpreter.rs"]
 mod code_interpreter;
+use agentic_core::utils::common::deserialize_from_value;
 use flate2::read::GzDecoder;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::Read;
@@ -127,7 +128,7 @@ impl RecordedSession {
                         );
                         new_items
                     };
-                    serde_json::from_value(Value::Array(new_items)).map_err(|error| mismatch(error.to_string()))?
+                    deserialize_from_value(Value::Array(new_items)).map_err(|error| mismatch(error.to_string()))?
                 }
                 _ if !turn.request.body.store => return Err(mismatch("stateless replay requires an input item array")),
                 _ => Vec::new(),
