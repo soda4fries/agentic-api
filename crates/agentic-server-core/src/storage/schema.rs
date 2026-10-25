@@ -1,5 +1,8 @@
 //! Database schema management and migrations.
 
+mod readiness;
+pub(crate) use readiness::{verify_persistence_ready, verify_persistence_writable};
+
 use std::env;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -15,12 +18,13 @@ use crate::config::DEFAULT_POSTGRES_MIGRATION_TIMEOUT_SECONDS;
 type DbResult<T> = Result<T, sqlx::Error>;
 
 const POSTGRES_SCHEMA_ADVISORY_LOCK: i64 = 7_194_963_546_799_751;
-const REQUIRED_POSTGRES_SCHEMA_COLUMN_COUNT: i64 = 40;
+const REQUIRED_POSTGRES_SCHEMA_COLUMN_COUNT: i64 = 42;
 const REQUIRED_POSTGRES_CONSTRAINT_COUNT: i64 = 14;
-const REQUIRED_POSTGRES_INTEGER_COLUMN_COUNT: i64 = 4;
+const REQUIRED_POSTGRES_INTEGER_COLUMN_COUNT: i64 = 5;
 const POSTGRES_INTEGER_WIDENING_SQL: &str = "
     ALTER TABLE conversations
-        ALTER COLUMN created_at TYPE BIGINT USING created_at::BIGINT;
+        ALTER COLUMN created_at TYPE BIGINT USING created_at::BIGINT,
+        ALTER COLUMN revision TYPE BIGINT USING revision::BIGINT;
     ALTER TABLE items
         ALTER COLUMN created_at TYPE BIGINT USING created_at::BIGINT,
         ALTER COLUMN seq TYPE BIGINT USING seq::BIGINT;
@@ -71,8 +75,10 @@ where
                  ('conversations', 'tenant_id', 'text', 'YES'), \
                  ('conversations', 'metadata', 'text', 'YES'), \
                  ('conversations', 'latest_response_id', 'text', 'YES'), \
+                 ('conversations', 'revision', 'integer', 'NO'), \
                  ('items', 'id', 'text', 'NO'), \
                  ('items', 'data', 'text', 'NO'), \
+                 ('items', 'public_id', 'text', 'YES'), \
                  ('items', 'created_at', 'integer', 'NO'), \
                  ('items', 'conversation_id', 'text', 'YES'), \
                  ('items', 'seq', 'integer', 'YES'), \
@@ -183,7 +189,7 @@ where
          JOIN pg_namespace table_namespace \
            ON table_namespace.oid = table_relation.relnamespace \
           AND table_namespace.nspname = actual.table_schema \
-         WHERE (actual.table_name = 'conversations' AND actual.column_name = 'created_at') \
+         WHERE (actual.table_name = 'conversations' AND actual.column_name IN ('created_at', 'revision')) \
             OR (actual.table_name = 'items' AND actual.column_name IN ('created_at', 'seq')) \
             OR (actual.table_name = 'responses' AND actual.column_name = 'created_at')",
     )
@@ -336,133 +342,14 @@ pub(crate) async fn pin_postgres_persistence_schema(connection: &mut sqlx::AnyCo
     Ok(())
 }
 
-pub(crate) async fn verify_persistence_writable(pool: &DbPool) -> DbResult<()> {
-    let mut transaction = pool.begin().await?;
-    let probe_result = async {
-        let suffix = uuid::Uuid::now_v7().simple();
-        let conversation_id = format!("conv_readiness_{suffix}");
-        let item_id = format!("item_readiness_{suffix}");
-        let response_id = format!("resp_readiness_{suffix}");
-        let created_at = crate::utils::common::utcnow_str();
-        sqlx::query("INSERT INTO conversations (id, created_at) VALUES ($1, $2)")
-            .bind(&conversation_id)
-            .bind(created_at)
-            .execute(&mut *transaction)
-            .await?;
-        crate::storage::models::conversation::lock_in_tx(&mut transaction, &conversation_id).await?;
-        crate::storage::models::item::create_in_tx(
-            &mut transaction,
-            vec![(item_id.clone(), "{}".to_owned())],
-            Some(&conversation_id),
-        )
-        .await?;
-        crate::storage::models::response::create_in_tx(
-            &mut transaction,
-            &response_id,
-            Some(&conversation_id),
-            None,
-            Some(&format!("[\"{item_id}\"]")),
-            Some("{}"),
-        )
-        .await?;
-        crate::storage::models::conversation::set_latest_response_in_tx(
-            &mut transaction,
-            &conversation_id,
-            &response_id,
-        )
-        .await?;
-        Ok(())
-    }
-    .await;
-    match probe_result {
-        Ok(()) => transaction.rollback().await,
-        Err(error) => {
-            let _ = transaction.rollback().await;
-            Err(error)
-        }
-    }
-}
-
-pub(crate) async fn verify_persistence_ready(pool: &DbPool) -> DbResult<()> {
-    let mut connection = pool.acquire().await?;
-    match DatabaseBackend::from_connection(&connection) {
-        DatabaseBackend::Postgres => {
-            let ready: bool = sqlx::query_scalar(
-                "WITH required(table_name, privilege) AS ( \
-                     VALUES \
-                         ('conversations', 'SELECT'), \
-                         ('conversations', 'INSERT'), \
-                         ('conversations', 'UPDATE'), \
-                         ('items', 'SELECT'), \
-                         ('items', 'INSERT'), \
-                         ('responses', 'SELECT'), \
-                         ('responses', 'INSERT'), \
-                         ('file_search_files', 'SELECT'), \
-                         ('file_search_files', 'INSERT'), \
-                         ('file_search_files', 'DELETE'), \
-                         ('file_search_stores', 'SELECT'), \
-                         ('file_search_stores', 'INSERT'), \
-                         ('file_search_stores', 'UPDATE'), \
-                         ('file_search_stores', 'DELETE'), \
-                         ('file_search_attachments', 'SELECT'), \
-                         ('file_search_attachments', 'INSERT'), \
-                         ('file_search_attachments', 'DELETE'), \
-                         ('file_search_chunks', 'SELECT'), \
-                         ('file_search_chunks', 'INSERT') \
-                 ) \
-                 SELECT current_setting('transaction_read_only') = 'off' \
-                    AND COUNT(table_relation.oid) = 19 \
-                    AND COALESCE(BOOL_AND( \
-                        has_table_privilege(current_user, table_relation.oid, required.privilege) \
-                    ), false) \
-                 FROM required \
-                 LEFT JOIN pg_class table_relation \
-                   ON table_relation.relname = required.table_name \
-                  AND table_relation.relkind IN ('r', 'p') \
-                  AND pg_table_is_visible(table_relation.oid)",
-            )
-            .fetch_one(&mut *connection)
-            .await?;
-            if !ready {
-                return Err(sqlx::Error::Configuration(
-                    "PostgreSQL persistence tables are unavailable, read-only, or missing required privileges".into(),
-                ));
-            }
-        }
-        DatabaseBackend::Sqlite => {
-            let query_only: i64 = sqlx::query_scalar("PRAGMA query_only")
-                .fetch_one(&mut *connection)
-                .await?;
-            if query_only != 0 {
-                return Err(sqlx::Error::Configuration("SQLite persistence is read-only".into()));
-            }
-            for statement in [
-                "SELECT id FROM conversations LIMIT 0",
-                "SELECT id FROM items LIMIT 0",
-                "SELECT id FROM responses LIMIT 0",
-                "SELECT id, created_at, data, content_type, content_base64 FROM file_search_files LIMIT 0",
-                "SELECT id, created_at, data, embedding_identity, embedding_dimensions FROM file_search_stores LIMIT 0",
-                "SELECT store_id, file_id, created_at, usage_bytes, storage_bytes, data FROM file_search_attachments LIMIT 0",
-                "SELECT store_id, file_id, chunk_index, data FROM file_search_chunks LIMIT 0",
-            ] {
-                sqlx::query(statement).execute(&mut *connection).await?;
-            }
-        }
-        DatabaseBackend::Other => {
-            sqlx::query("SELECT 1").execute(&mut *connection).await?;
-        }
-    }
-    Ok(())
-}
-
 async fn run_embedded_migrations(pool: &DbPool, postgres_migration_timeout: Duration) -> DbResult<()> {
     let mut connection = pool.acquire().await?;
     let is_postgres = DatabaseBackend::from_connection(&connection) == DatabaseBackend::Postgres;
-    if is_postgres {
-        if let Err(error) = configure_postgres_migration_timeout(&mut connection, postgres_migration_timeout).await {
-            let _ = connection.close().await;
-            return Err(error);
-        }
+    if is_postgres
+        && let Err(error) = configure_postgres_migration_timeout(&mut connection, postgres_migration_timeout).await
+    {
+        let _ = connection.close().await;
+        return Err(error);
     }
 
     let migration_result = sqlx::migrate!("./migrations")
@@ -679,6 +566,9 @@ mod tests {
             include_str!("../../migrations/0002_add_placeholders.sql"),
             include_str!("../../migrations/0003_index_conversation_sequence.sql"),
             include_str!("../../migrations/0004_link_conversation_latest_response.sql"),
+            include_str!("../../migrations/0005_conversation_revision.sql"),
+            include_str!("../../migrations/0006_item_references.sql"),
+            include_str!("../../migrations/0007_response_item_public_ids.sql"),
         ] {
             sqlx::raw_sql(migration).execute(pool.as_ref()).await.unwrap();
         }
@@ -692,7 +582,7 @@ mod tests {
             "a supervisor marker cannot conceal missing file search migrations"
         );
         assert!(!wrapper.schema_ready.load(Ordering::SeqCst));
-        sqlx::raw_sql(include_str!("../../migrations/0005_file_search.sql"))
+        sqlx::raw_sql(include_str!("../../migrations/0008_file_search.sql"))
             .execute(pool.as_ref())
             .await
             .unwrap();
@@ -768,6 +658,9 @@ mod tests {
             include_str!("../../migrations/0002_add_placeholders.sql"),
             include_str!("../../migrations/0003_index_conversation_sequence.sql"),
             include_str!("../../migrations/0004_link_conversation_latest_response.sql"),
+            include_str!("../../migrations/0005_conversation_revision.sql"),
+            include_str!("../../migrations/0006_item_references.sql"),
+            include_str!("../../migrations/0007_response_item_public_ids.sql"),
         ] {
             sqlx::raw_sql(migration).execute(&mut *connection).await.unwrap();
         }
@@ -794,7 +687,7 @@ mod tests {
         let supervisor = PoolWithSchema::new(Arc::new(supervisor_pool));
         assert!(supervisor.ensure_schema_ready_with_marker(true).await.is_err());
         assert!(!supervisor.schema_ready.load(Ordering::SeqCst));
-        sqlx::raw_sql(include_str!("../../migrations/0005_file_search.sql"))
+        sqlx::raw_sql(include_str!("../../migrations/0008_file_search.sql"))
             .execute(&mut *connection)
             .await
             .unwrap();
@@ -838,7 +731,10 @@ mod tests {
             include_str!("../../migrations/0002_add_placeholders.sql"),
             include_str!("../../migrations/0003_index_conversation_sequence.sql"),
             include_str!("../../migrations/0004_link_conversation_latest_response.sql"),
-            include_str!("../../migrations/0005_file_search.sql"),
+            include_str!("../../migrations/0005_conversation_revision.sql"),
+            include_str!("../../migrations/0006_item_references.sql"),
+            include_str!("../../migrations/0007_response_item_public_ids.sql"),
+            include_str!("../../migrations/0008_file_search.sql"),
         ] {
             sqlx::raw_sql(migration)
                 .execute(&mut *connection)
@@ -961,7 +857,7 @@ mod tests {
         let bigint_columns: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM information_schema.columns \
              WHERE table_schema = $1 AND data_type = 'bigint' \
-             AND ((table_name = 'conversations' AND column_name = 'created_at') \
+             AND ((table_name = 'conversations' AND column_name IN ('created_at', 'revision')) \
                OR (table_name = 'items' AND column_name IN ('created_at', 'seq')) \
                OR (table_name = 'responses' AND column_name = 'created_at'))",
         )
@@ -969,13 +865,13 @@ mod tests {
         .fetch_one(&mut *connection)
         .await
         .expect("inspect widened PostgreSQL columns");
-        assert_eq!(bigint_columns, 4);
+        assert_eq!(bigint_columns, REQUIRED_POSTGRES_INTEGER_COLUMN_COUNT);
         assert!(
             validate_supervisor_schema(
                 REQUIRED_POSTGRES_SCHEMA_COLUMN_COUNT,
                 REQUIRED_POSTGRES_CONSTRAINT_COUNT,
                 REQUIRED_POSTGRES_INTEGER_COLUMN_COUNT,
-                4 - bigint_columns,
+                REQUIRED_POSTGRES_INTEGER_COLUMN_COUNT - bigint_columns,
                 true,
             )
             .is_ok()
@@ -1082,7 +978,7 @@ mod tests {
         let bigint_columns: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM information_schema.columns \
              WHERE table_schema = $1 AND data_type = 'bigint' \
-             AND ((table_name = 'conversations' AND column_name = 'created_at') \
+             AND ((table_name = 'conversations' AND column_name IN ('created_at', 'revision')) \
                OR (table_name = 'items' AND column_name IN ('created_at', 'seq')) \
                OR (table_name = 'responses' AND column_name = 'created_at'))",
         )

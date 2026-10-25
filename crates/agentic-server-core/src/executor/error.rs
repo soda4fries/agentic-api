@@ -3,11 +3,37 @@ use thiserror::Error;
 
 use crate::StorageError;
 use crate::tool::ToolError;
+use crate::types::io::input::InputValidationError;
+use crate::types::request_response::{
+    MAX_TOOL_CALLS_PARAM, MaxToolCallsError, PromptCacheOptionsError, UnsupportedParameterError, UpstreamRequestError,
+};
 use crate::utils::common::serialize_to_vec_or_default;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResourceLimit {
+    ResponseBudget,
+    UpstreamSseLine,
+    UpstreamJsonBody,
+    StreamEvent,
+}
+
+impl std::fmt::Display for ResourceLimit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ResponseBudget => write!(f, "executor response budget"),
+            Self::UpstreamSseLine => write!(f, "upstream SSE line"),
+            Self::UpstreamJsonBody => write!(f, "upstream response"),
+            Self::StreamEvent => write!(f, "stream event"),
+        }
+    }
+}
 
 #[non_exhaustive]
 #[derive(Debug, Error)]
 pub enum ExecutorError {
+    /// Request-owned streaming orchestration panicked. Never forward panic data.
+    #[error("stream producer panicked")]
+    StreamProducerPanicked,
     /// A storage layer operation failed.
     #[error("storage error: {0}")]
     Storage(#[from] StorageError),
@@ -78,12 +104,37 @@ pub enum ExecutorError {
     #[error("{entity} not found: {id}")]
     NotFound { entity: String, id: String },
 
+    /// A response session cannot resolve the requested continuation checkpoint.
+    #[error("Previous response with id '{id}' not found.")]
+    PreviousResponseNotFound { id: String },
+
     #[error("invalid request: {0}")]
     InvalidRequest(String),
+
+    #[error("invalid request: {0}")]
+    InvalidInput(#[from] InputValidationError),
+
+    /// The request's `max_tool_calls` is not an integer of at least one.
+    #[error(transparent)]
+    InvalidMaxToolCalls(#[from] MaxToolCallsError),
+    /// A recognized request value that cannot be used in this combination, reported with
+    /// `code: unsupported_value` and the offending request parameter.
+    #[error("{message}")]
+    UnsupportedValue { param: &'static str, message: &'static str },
+    /// A recognized request member this gateway cannot honour (`background: true`, `prompt`).
+    #[error(transparent)]
+    UnsupportedParameter(#[from] UnsupportedParameterError),
+
+    #[error(transparent)]
+    InvalidPromptCacheOptions(#[from] PromptCacheOptionsError),
 
     /// The request exceeds a documented transport or component size budget.
     #[error("{0}")]
     PayloadTooLarge(String),
+
+    /// A configured response or transport size boundary was exceeded.
+    #[error("{limit} exceeded {max_bytes} bytes")]
+    ResourceLimitExceeded { limit: ResourceLimit, max_bytes: usize },
 
     /// The request conflicts with state already stored.
     #[error("conflict: {0}")]
@@ -94,6 +145,15 @@ pub enum ExecutorError {
 
     #[error("tool error: {0}")]
     Tool(#[from] ToolError),
+}
+
+impl From<UpstreamRequestError> for ExecutorError {
+    fn from(error: UpstreamRequestError) -> Self {
+        match error {
+            UpstreamRequestError::Input(error) => error.into(),
+            UpstreamRequestError::Tool(error) => error.into(),
+        }
+    }
 }
 
 impl ExecutorError {
@@ -127,10 +187,22 @@ impl ExecutorError {
                 StatusCode::from_u16(error.status_code()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
             }
             Self::Storage(e) if e.is_not_found() => StatusCode::NOT_FOUND,
+            Self::Storage(e) if e.is_validation() => StatusCode::BAD_REQUEST,
             Self::LLMRequest { status, .. } | Self::LLMTransport { status, .. } => *status,
             Self::ConversationLocked { .. }
-            | Self::Tool(ToolError::Config(_) | ToolError::MissingOutput { .. })
+            | Self::Tool(
+                ToolError::Config(_)
+                | ToolError::MissingOutput { .. }
+                | ToolError::UnknownCallOutput { .. }
+                | ToolError::UnknownParameter { .. },
+            )
             | Self::InvalidRequest(_)
+            | Self::InvalidInput(_)
+            | Self::InvalidPromptCacheOptions(_)
+            | Self::InvalidMaxToolCalls(_)
+            | Self::UnsupportedValue { .. }
+            | Self::UnsupportedParameter(_)
+            | Self::PreviousResponseNotFound { .. }
             | Self::JsonError(_) => StatusCode::BAD_REQUEST,
             Self::Tool(
                 ToolError::Execution(_)
@@ -141,6 +213,10 @@ impl ExecutorError {
             Self::Conflict(_) => StatusCode::CONFLICT,
             Self::PayloadTooLarge(_) => StatusCode::PAYLOAD_TOO_LARGE,
             Self::ParseError(_) => StatusCode::UNPROCESSABLE_ENTITY,
+            Self::ResourceLimitExceeded { limit, .. } => match limit {
+                ResourceLimit::UpstreamSseLine | ResourceLimit::UpstreamJsonBody => StatusCode::BAD_GATEWAY,
+                ResourceLimit::ResponseBudget | ResourceLimit::StreamEvent => StatusCode::INTERNAL_SERVER_ERROR,
+            },
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -157,14 +233,31 @@ impl ExecutorError {
                 _ => "server_error",
             },
             Self::ConversationLocked { .. }
-            | Self::Tool(ToolError::Config(_) | ToolError::MissingOutput { .. })
+            | Self::Tool(
+                ToolError::Config(_)
+                | ToolError::MissingOutput { .. }
+                | ToolError::UnknownCallOutput { .. }
+                | ToolError::UnknownParameter { .. },
+            )
             | Self::InvalidRequest(_)
+            | Self::InvalidInput(_)
+            | Self::InvalidPromptCacheOptions(_)
+            | Self::InvalidMaxToolCalls(_)
+            | Self::UnsupportedValue { .. }
+            | Self::UnsupportedParameter(_)
+            | Self::PreviousResponseNotFound { .. }
             | Self::ParseError(_)
             | Self::JsonError(_)
-            | Self::PayloadTooLarge(_) => "invalid_request_error",
+            | Self::PayloadTooLarge(_)
+            | Self::Storage(StorageError::ItemCursorNotFound { .. }) => "invalid_request_error",
             Self::Storage(e) if e.is_not_found() => "not_found",
+            Self::Storage(e) if e.is_validation() => "invalid_request_error",
             Self::Conflict(_) => "conflict_error",
             Self::LLMRequest { .. } | Self::LLMTransport { .. } | Self::CompactionFailed { .. } => "upstream_error",
+            Self::ResourceLimitExceeded { limit, .. } => match limit {
+                ResourceLimit::UpstreamSseLine | ResourceLimit::UpstreamJsonBody => "upstream_error",
+                ResourceLimit::ResponseBudget | ResourceLimit::StreamEvent => "server_error",
+            },
             Self::Tool(
                 ToolError::Execution(_)
                 | ToolError::InvalidUpstreamToolSearch
@@ -179,18 +272,36 @@ impl ExecutorError {
     pub fn error_code(&self) -> &'static str {
         match self.client_visible_error() {
             Self::ConversationLocked { .. } => "conversation_locked",
+            Self::PreviousResponseNotFound { .. } => "previous_response_not_found",
             Self::Conflict(_) => "response_already_stored",
+            Self::Storage(StorageError::InvalidItemId { .. }) => "invalid_value",
+            Self::Storage(StorageError::ItemAlreadyInConversation) => "item_already_in_conversation",
             Self::PayloadTooLarge(_) => "body_too_large",
+            Self::ResourceLimitExceeded { .. } => "response_resource_limit_exceeded",
+            Self::InvalidPromptCacheOptions(PromptCacheOptionsError::Unsupported) => "unsupported_parameter",
+            Self::InvalidMaxToolCalls(error) => error.code(),
+            Self::UnsupportedValue { .. } => "unsupported_value",
+            Self::UnsupportedParameter(error) => error.code(),
+            Self::Tool(ToolError::UnknownParameter { .. }) => "unknown_parameter",
             other => other.error_type(),
         }
     }
 
     /// Request parameter associated with the API error, when applicable.
     #[must_use]
-    pub fn error_param(&self) -> Option<&'static str> {
+    pub fn error_param(&self) -> Option<&str> {
         match self.client_visible_error() {
+            Self::Storage(StorageError::InvalidItemId { param, .. })
+            | Self::Tool(ToolError::UnknownParameter { param }) => Some(param),
+            Self::Storage(StorageError::ItemAlreadyInConversation) => Some("items"),
+            Self::Storage(StorageError::ItemCursorNotFound { .. }) => Some("after"),
             Self::ConversationLocked { .. } => Some("conversation"),
-            Self::Tool(ToolError::MissingOutput { .. }) => Some("input"),
+            Self::PreviousResponseNotFound { .. } => Some("previous_response_id"),
+            Self::Tool(ToolError::MissingOutput { .. } | ToolError::UnknownCallOutput { .. }) => Some("input"),
+            Self::InvalidPromptCacheOptions(_) => Some("prompt_cache_options"),
+            Self::InvalidMaxToolCalls(_) => Some(MAX_TOOL_CALLS_PARAM),
+            Self::UnsupportedValue { param, .. } => Some(param),
+            Self::UnsupportedParameter(error) => Some(error.param()),
             _ => None,
         }
     }
@@ -199,14 +310,28 @@ impl ExecutorError {
     #[must_use]
     pub fn error_message(&self) -> String {
         match self.client_visible_error() {
-            Self::Tool(error @ ToolError::MissingOutput { .. }) => error.to_string(),
+            Self::Storage(
+                error @ (StorageError::InvalidItemId { .. }
+                | StorageError::ItemAlreadyInConversation
+                | StorageError::ItemCursorNotFound { .. }),
+            ) => error.to_string(),
+            Self::Storage(StorageError::Database(_)) => "Internal server error".to_owned(),
+            Self::Tool(
+                error @ (ToolError::MissingOutput { .. }
+                | ToolError::UnknownCallOutput { .. }
+                | ToolError::UnknownParameter { .. }),
+            ) => error.to_string(),
             other => other.to_string(),
         }
     }
 
     /// Builds the OpenAI-compatible error object shared by HTTP and SSE.
     pub(crate) fn response_error(&self) -> serde_json::Value {
-        let code = if matches!(self.client_visible_error(), Self::Tool(ToolError::MissingOutput { .. })) {
+        let code = if matches!(
+            self.client_visible_error(),
+            Self::Tool(ToolError::MissingOutput { .. } | ToolError::UnknownCallOutput { .. })
+                | Self::Storage(StorageError::ItemCursorNotFound { .. })
+        ) {
             serde_json::Value::Null
         } else {
             serde_json::json!(self.error_code())
@@ -297,6 +422,22 @@ mod tests {
     }
 
     #[test]
+    fn previous_response_error_has_the_continuation_envelope() {
+        let error = ExecutorError::PreviousResponseNotFound {
+            id: "resp_missing".to_owned(),
+        };
+        assert_eq!(error.http_status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&error.into_response_body()).unwrap(),
+            serde_json::json!({"error": {
+                "message": "Previous response with id 'resp_missing' not found.",
+                "type": "invalid_request_error", "code": "previous_response_not_found",
+                "param": "previous_response_id"
+            }})
+        );
+    }
+
+    #[test]
     fn tool_search_configuration_errors_are_bad_requests() {
         let error = ExecutorError::from(ToolError::Config("invalid tool_search request".to_owned()));
 
@@ -357,6 +498,24 @@ mod tests {
     }
 
     #[test]
+    fn invalid_max_tool_calls_matches_the_openai_parameter_envelope() {
+        let below = crate::types::request_response::OutOfRangeInteger::Unsigned(0);
+        let error = ExecutorError::from(MaxToolCallsError::BelowMinimum(below));
+
+        assert_eq!(error.http_status(), StatusCode::BAD_REQUEST);
+        let value: serde_json::Value = serde_json::from_slice(&error.into_response_body()).unwrap();
+        assert_eq!(
+            value,
+            serde_json::json!({"error": {
+                "message": "Invalid 'max_tool_calls': integer below minimum value. Expected a value >= 1, but got 0 instead.",
+                "type": "invalid_request_error",
+                "code": "integer_below_min_value",
+                "param": "max_tool_calls"
+            }})
+        );
+    }
+
+    #[test]
     fn response_id_conflict_has_a_machine_readable_conflict_envelope() {
         let error = ExecutorError::Conflict("a turn is already stored under 'resp_1'".to_owned());
 
@@ -392,6 +551,126 @@ mod tests {
                     "code": null
                 }
             })
+        );
+    }
+
+    fn envelope(error: ExecutorError) -> serde_json::Value {
+        assert_eq!(error.http_status(), StatusCode::BAD_REQUEST);
+        serde_json::from_slice(&error.into_response_body()).expect("valid error response JSON")
+    }
+
+    // The three async-tool errors below match the bodies recorded from OpenAI in
+    // tests/cassettes/async_tools (edge-cases, client-tool-types, multi-agent-parallel).
+
+    #[test]
+    fn unknown_call_output_matches_openai_error_envelope() {
+        let error = ExecutorError::Tool(ToolError::UnknownCallOutput {
+            call_id: "call_async_unknown_probe".to_owned(),
+        });
+        assert_eq!(
+            envelope(error),
+            serde_json::json!({
+                "error": {
+                    "message": "No tool call found for function call output with call_id call_async_unknown_probe.",
+                    "type": "invalid_request_error",
+                    "param": "input",
+                    "code": null
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn unknown_tool_parameter_matches_openai_error_envelope() {
+        let error = ExecutorError::Tool(ToolError::UnknownParameter {
+            param: "tools[0].async".to_owned(),
+        });
+        assert_eq!(
+            envelope(error),
+            serde_json::json!({
+                "error": {
+                    "message": "Unknown parameter: 'tools[0].async'.",
+                    "type": "invalid_request_error",
+                    "param": "tools[0].async",
+                    "code": "unknown_parameter"
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn unsupported_value_matches_openai_error_envelope() {
+        let error = ExecutorError::UnsupportedValue {
+            param: "multi_agent",
+            message: "Async parallel tool calls are not yet supported in multi-agent mode.",
+        };
+        assert_eq!(
+            envelope(error),
+            serde_json::json!({
+                "error": {
+                    "message": "Async parallel tool calls are not yet supported in multi-agent mode.",
+                    "type": "invalid_request_error",
+                    "param": "multi_agent",
+                    "code": "unsupported_value"
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn unsupported_parameters_match_openai_error_envelopes() {
+        let background = ExecutorError::from(UnsupportedParameterError::BackgroundMode);
+        assert_eq!(background.http_status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            envelope(background),
+            serde_json::json!({"error": {
+                "message": "background mode is not supported; omit `background` or set it to false",
+                "type": "invalid_request_error",
+                "code": "unsupported_value",
+                "param": "background"
+            }})
+        );
+        assert_eq!(
+            envelope(ExecutorError::from(UnsupportedParameterError::PromptTemplate)),
+            serde_json::json!({"error": {
+                "message": "reusable prompt templates are not supported; send `instructions` and `input` instead of `prompt`",
+                "type": "invalid_request_error",
+                "code": "unsupported_parameter",
+                "param": "prompt"
+            }})
+        );
+        assert_eq!(
+            envelope(ExecutorError::from(UnsupportedParameterError::BackgroundType(
+                crate::types::request_response::JsonKind::Object
+            ))),
+            serde_json::json!({"error": {
+                "message": "Invalid type for 'background': expected a boolean, but got an object instead.",
+                "type": "invalid_request_error",
+                "code": "invalid_type",
+                "param": "background"
+            }})
+        );
+    }
+}
+
+#[cfg(test)]
+mod storage_error_mapping_tests {
+    use super::*;
+    use std::error::Error;
+
+    #[test]
+    fn database_details_remain_in_the_source_but_not_the_response() {
+        let error = ExecutorError::Storage(StorageError::Database(sqlx::Error::Protocol(
+            "UNIQUE constraint failed: items.id".to_owned(),
+        )));
+        assert!(error.source().unwrap().to_string().contains("items.id"));
+        assert_eq!(error.http_status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let body: serde_json::Value = serde_json::from_slice(&error.into_response_body()).unwrap();
+        assert_eq!(
+            body,
+            serde_json::json!({"error": {
+                "message": "Internal server error", "type": "server_error", "code": "server_error"
+            }})
         );
     }
 }

@@ -1,4 +1,6 @@
 mod common;
+#[path = "responses/prompt_cache_options.rs"]
+mod prompt_cache_options;
 
 use axum::Router;
 use axum::body::Bytes;
@@ -10,6 +12,7 @@ use std::collections::VecDeque;
 use std::convert::Infallible;
 use std::fmt::Write as _;
 use std::future::Future;
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -20,13 +23,15 @@ use tokio_util::sync::CancellationToken;
 
 use agentic_core::executor::{ConversationHandler, ExecutionContext, ResponseHandler};
 use agentic_core::proxy::ProxyState;
-use agentic_core::storage::{
-    ConversationStore, DbPool, InOutItem, ResponseMetadata, ResponseStore, create_pool_with_schema,
-};
+use agentic_core::storage::{ConversationStore, DbPool, ResponseMetadata, ResponseStore, create_pool_with_schema};
+use agentic_core::types::io::InOutItem;
 use agentic_core::types::io::{InputItem, ResponsesInput};
-use agentic_server::app::{AppState, WebSocketTracker};
+use agentic_server::app::{AppState, DEFAULT_MAX_REQUEST_BODY_SIZE, WebSocketTracker};
 
-use common::{spawn_gateway, spawn_mock_llm, test_config, test_state};
+use common::{spawn_gateway, spawn_mock_llm, test_config, test_state, test_state_with_max_request_body_size};
+
+/// Deliberately tiny ceiling used to exercise the limit without large allocations.
+const SMALL_REQUEST_SIZE_LIMIT: NonZeroUsize = NonZeroUsize::new(500).expect("nonzero");
 
 const COMPETING_RESPONSE_ID: &str = "resp_competing";
 const CONFLICT_MESSAGE: &str = "conversation changed while the response was being generated; retry the request";
@@ -212,6 +217,8 @@ async fn storage_backed_state(llm_url: &str) -> StorageBackedState {
         llm_api_base: config.llm_api_base,
         skip_llm_ready_check: config.skip_llm_ready_check,
         openai_api_key: config.openai_api_key,
+        model_capabilities: std::sync::Arc::default(),
+        max_request_body_size: DEFAULT_MAX_REQUEST_BODY_SIZE,
     };
     StorageBackedState { state, pool, _db: db }
 }
@@ -248,6 +255,7 @@ async fn persist_competing_turn(pool: &Arc<DbPool>, conversation_id: &str) {
             None,
             competing_turn_items(),
             &ResponseMetadata {
+                multi_agent_tree: None,
                 model: "competing-model".to_owned(),
                 ..ResponseMetadata::default()
             },
@@ -376,9 +384,15 @@ async fn spawn_mock_vllm_json_capture() -> (String, Arc<Mutex<Vec<serde_json::Va
 async fn spawn_mock_vllm_json_capture_body(
     response_body: serde_json::Value,
 ) -> (String, Arc<Mutex<Vec<serde_json::Value>>>, tokio::task::JoinHandle<()>) {
+    spawn_mock_vllm_json_capture_sequence(vec![response_body]).await
+}
+
+async fn spawn_mock_vllm_json_capture_sequence(
+    response_bodies: Vec<serde_json::Value>,
+) -> (String, Arc<Mutex<Vec<serde_json::Value>>>, tokio::task::JoinHandle<()>) {
     let requests = Arc::new(Mutex::new(Vec::new()));
     let route_requests = Arc::clone(&requests);
-    let response_body = Arc::new(response_body.to_string());
+    let response_body = Arc::new(Mutex::new(std::collections::VecDeque::from(response_bodies)));
     let app = Router::new().route(
         "/v1/responses",
         post(move |body: Bytes| {
@@ -387,10 +401,16 @@ async fn spawn_mock_vllm_json_capture_body(
             async move {
                 let body = serde_json::from_slice::<serde_json::Value>(&body).unwrap();
                 route_requests.lock().await.push(body);
+                let mut responses = response_body.lock().await;
+                let response = if responses.len() > 1 {
+                    responses.pop_front().unwrap()
+                } else {
+                    responses.front().unwrap().clone()
+                };
                 axum::response::Response::builder()
                     .status(200)
                     .header("Content-Type", "application/json")
-                    .body(axum::body::Body::from(response_body.as_str().to_owned()))
+                    .body(axum::body::Body::from(response.to_string()))
                     .unwrap()
                     .into_response()
             }
@@ -748,6 +768,96 @@ async fn test_store_false_proxies_json_to_vllm() {
     assert_eq!(body["id"], "mock_id");
 }
 
+#[cfg(not(feature = "embedded-code-interpreter"))]
+#[tokio::test]
+async fn code_interpreter_disabled_rejects_before_http_upstream_inference() {
+    let (llm_url, requests, _llm) = spawn_mock_vllm_json_capture().await;
+    let (gateway_url, _gateway) = spawn_gateway(test_state(&test_config(&llm_url))).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("{gateway_url}/v1/responses"))
+        .json(&serde_json::json!({
+            "model": "test",
+            "input": "test input",
+            "store": false,
+            "tools": [{"type": "code_interpreter", "container": {"type": "auto"}}]
+        }))
+        .send()
+        .await
+        .expect("gateway response");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body: serde_json::Value = response.json().await.expect("error response JSON");
+    assert_eq!(body["error"]["type"], "invalid_request_error");
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("code_interpreter is disabled"))
+    );
+    assert!(
+        requests.lock().await.is_empty(),
+        "the upstream mock must receive no requests"
+    );
+}
+
+#[tokio::test]
+async fn lone_client_code_interpreter_function_reaches_upstream() {
+    let (llm_url, requests, _llm) = spawn_mock_vllm_json_capture().await;
+    let (gateway_url, _gateway) = spawn_gateway(test_state(&test_config(&llm_url))).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("{gateway_url}/v1/responses"))
+        .json(&serde_json::json!({
+            "model": "test",
+            "input": "test input",
+            "store": false,
+            "tools": [{"type": "function", "name": "code_interpreter"}]
+        }))
+        .send()
+        .await
+        .expect("gateway response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let requests = requests.lock().await;
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0]["tools"][0]["type"], "function");
+    assert_eq!(requests[0]["tools"][0]["name"], "code_interpreter");
+}
+
+#[tokio::test]
+async fn code_interpreter_name_collision_fails_before_inference() {
+    let (llm_url, requests, _llm) = spawn_mock_vllm_json_capture().await;
+    let (gateway_url, _gateway) = spawn_gateway(test_state(&test_config(&llm_url))).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("{gateway_url}/v1/responses"))
+        .json(&serde_json::json!({
+            "model": "test",
+            "input": "test input",
+            "store": false,
+            "tools": [
+                {"type": "function", "name": "code_interpreter"},
+                {"type": "code_interpreter", "container": {"type": "auto"}}
+            ]
+        }))
+        .send()
+        .await
+        .expect("gateway response");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body: serde_json::Value = response.json().await.expect("error response JSON");
+    assert_eq!(body["error"]["type"], "invalid_request_error");
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("fixed model-visible tool name 'code_interpreter'"))
+    );
+    assert!(
+        requests.lock().await.is_empty(),
+        "a fixed-name collision must not contact upstream inference"
+    );
+}
+
 /// Regression test for vllm-project/agentic-api#150: a structured message
 /// input item omitting the `"type": "message"` discriminant must still be
 /// accepted by the endpoint, not rejected as an untagged-enum mismatch.
@@ -1048,6 +1158,41 @@ async fn test_invalid_json_is_rejected_before_upstream() {
 }
 
 #[tokio::test]
+async fn test_unsupported_input_item_is_rejected_before_upstream() {
+    let (llm_url, requests, _llm) = spawn_mock_vllm_json_capture_bytes().await;
+    let (gateway_url, _gateway) = spawn_gateway(test_state(&test_config(&llm_url))).await;
+    let client = reqwest::Client::new();
+
+    for store in [false, true] {
+        for stream in [false, true] {
+            let response = client
+                .post(format!("{gateway_url}/v1/responses"))
+                .json(&serde_json::json!({
+                    "model": "test",
+                    "store": store,
+                    "stream": stream,
+                    "input": [
+                        {"role": "user", "content": "hi"},
+                        {"type": "computer_call", "id": "cu_1", "call_id": "call_1", "action": {"type": "click"}}
+                    ]
+                }))
+                .send()
+                .await
+                .expect("unsupported input request");
+
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            let body: serde_json::Value = response.json().await.expect("error envelope");
+            assert_eq!(body["error"]["code"], "invalid_request_error");
+            assert_eq!(body["error"]["type"], "invalid_request_error");
+            assert!(body["error"].get("param").is_none(), "request shape, not a parameter");
+            let message = body["error"]["message"].as_str().expect("error message");
+            assert!(!message.is_empty(), "the boundary reports why the body was rejected");
+        }
+    }
+    assert!(requests.lock().await.is_empty(), "rejected before reaching upstream");
+}
+
+#[tokio::test]
 async fn test_store_false_with_web_search_reaches_executor() {
     // Arrange
     let (llm_url, requests, _h1) = spawn_mock_vllm_json_capture().await;
@@ -1107,6 +1252,429 @@ async fn test_stateful_request_forwards_reasoning_configuration() {
     let requests = requests.lock().await;
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0]["reasoning"], reasoning);
+}
+
+#[tokio::test]
+async fn test_prompt_cache_key_matches_pass_through_and_typed_execution() {
+    let (llm_url, requests, _llm) = spawn_mock_vllm_json_capture().await;
+    let fixture = storage_backed_state(&llm_url).await;
+    let (gateway_url, _gateway) = spawn_gateway(fixture.state.clone()).await;
+    let client = reqwest::Client::new();
+    let mut stored_response_id = None;
+
+    for store in [false, true] {
+        let response = client
+            .post(format!("{gateway_url}/v1/responses"))
+            .json(&serde_json::json!({
+                "model": "test",
+                "input": "hi",
+                "prompt_cache_key": "workspace-a",
+                "store": store,
+                "stream": false
+            }))
+            .send()
+            .await
+            .expect("response request");
+        assert_eq!(response.status(), StatusCode::OK);
+        if store {
+            let body: serde_json::Value = response.json().await.expect("typed response body");
+            stored_response_id = Some(body["id"].as_str().expect("stored response id").to_owned());
+        }
+    }
+
+    let stored_response_id = stored_response_id.expect("stateful request should return an id");
+    let continuation = client
+        .post(format!("{gateway_url}/v1/responses"))
+        .json(&serde_json::json!({
+            "model": "test",
+            "input": "continue",
+            "previous_response_id": stored_response_id,
+            "store": true,
+            "stream": false
+        }))
+        .send()
+        .await
+        .expect("continuation request");
+    assert_eq!(continuation.status(), StatusCode::OK);
+
+    let requests = requests.lock().await;
+    assert_eq!(requests.len(), 3);
+    assert_eq!(requests[0]["prompt_cache_key"], "workspace-a");
+    assert_eq!(requests[1]["prompt_cache_key"], "workspace-a");
+    assert!(requests[2].get("prompt_cache_key").is_none());
+}
+
+#[tokio::test]
+async fn test_service_tier_matches_pass_through_and_typed_execution() {
+    let (llm_url, requests, _llm) = spawn_mock_vllm_json_capture_body(serde_json::json!({
+        "id": "mock_id",
+        "object": "response",
+        "status": "completed",
+        "model": "test",
+        "output": [],
+        "created_at": 0,
+        "service_tier": "default"
+    }))
+    .await;
+    let fixture = storage_backed_state(&llm_url).await;
+    let (gateway_url, _gateway) = spawn_gateway(fixture.state.clone()).await;
+    let client = reqwest::Client::new();
+    let mut stored_response_id = None;
+
+    for store in [false, true] {
+        let response = client
+            .post(format!("{gateway_url}/v1/responses"))
+            .json(&serde_json::json!({
+                "model": "test",
+                "input": "hi",
+                "service_tier": "priority",
+                "store": store,
+                "stream": false
+            }))
+            .send()
+            .await
+            .expect("response request");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: serde_json::Value = response.json().await.expect("response body");
+        assert_eq!(body["service_tier"], "default");
+        if store {
+            stored_response_id = Some(body["id"].as_str().expect("stored response id").to_owned());
+        }
+    }
+
+    let stored_response_id = stored_response_id.expect("stateful request should return an id");
+    let retrieved: serde_json::Value = client
+        .get(format!("{gateway_url}/v1/responses/{stored_response_id}"))
+        .bearer_auth("test-key")
+        .send()
+        .await
+        .expect("retrieve stored response")
+        .json()
+        .await
+        .expect("retrieved response body");
+    assert_eq!(retrieved["service_tier"], "default");
+
+    let continuation = client
+        .post(format!("{gateway_url}/v1/responses"))
+        .json(&serde_json::json!({
+            "model": "test",
+            "input": "continue",
+            "previous_response_id": stored_response_id,
+            "store": true,
+            "stream": false
+        }))
+        .send()
+        .await
+        .expect("continuation request");
+    assert_eq!(continuation.status(), StatusCode::OK);
+
+    let requests = requests.lock().await;
+    assert_eq!(requests.len(), 3);
+    assert_eq!(requests[0]["service_tier"], "priority");
+    assert_eq!(requests[1]["service_tier"], "priority");
+    assert!(requests[2].get("service_tier").is_none());
+}
+
+#[tokio::test]
+async fn test_prompt_cache_key_matches_pass_through_and_typed_sse_execution() {
+    let (llm_url, requests, llm) = spawn_tool_search_sse_sequence(vec![final_message_sse(); 2]).await;
+    let fixture = storage_backed_state(&llm_url).await;
+    let (gateway_url, gateway) = spawn_gateway(fixture.state.clone()).await;
+    for store in [false, true] {
+        let response = reqwest::Client::new()
+            .post(format!("{gateway_url}/v1/responses"))
+            .json(&serde_json::json!({
+                "model": "test", "input": "hi", "prompt_cache_key": "workspace-a",
+                "store": store, "stream": true
+            }))
+            .send()
+            .await
+            .expect("streaming response");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(
+            response.headers()[header::CONTENT_TYPE]
+                .to_str()
+                .unwrap()
+                .starts_with("text/event-stream")
+        );
+        let body = response.text().await.expect("complete SSE body");
+        let events: Vec<serde_json::Value> = body
+            .lines()
+            .filter_map(|line| line.strip_prefix("data:"))
+            .map(str::trim)
+            .filter(|data| *data != "[DONE]")
+            .map(|data| serde_json::from_str(data).expect("SSE JSON event"))
+            .collect();
+        assert_eq!(events.last().expect("terminal event")["type"], "response.completed");
+    }
+    let requests = requests.lock().await;
+    assert_eq!(requests.len(), 2);
+    for request in requests.iter() {
+        assert_eq!(request["prompt_cache_key"], "workspace-a");
+        assert_eq!(request["stream"], true);
+    }
+    gateway.abort();
+    llm.abort();
+}
+
+#[tokio::test]
+async fn test_service_tier_matches_pass_through_and_typed_sse_execution() {
+    let response = final_message_sse().replace(
+        "\"status\":\"completed\",\"usage\":null",
+        "\"status\":\"completed\",\"service_tier\":\"default\",\"usage\":null",
+    );
+    let (llm_url, requests, llm) = spawn_tool_search_sse_sequence(vec![response.clone(), response]).await;
+    let fixture = storage_backed_state(&llm_url).await;
+    let (gateway_url, gateway) = spawn_gateway(fixture.state.clone()).await;
+
+    for store in [false, true] {
+        let response = reqwest::Client::new()
+            .post(format!("{gateway_url}/v1/responses"))
+            .json(&serde_json::json!({
+                "model": "test", "input": "hi", "service_tier": "priority",
+                "store": store, "stream": true
+            }))
+            .send()
+            .await
+            .expect("streaming response");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response.text().await.expect("complete SSE body");
+        let terminal: serde_json::Value = body
+            .lines()
+            .filter_map(|line| line.strip_prefix("data:"))
+            .map(str::trim)
+            .filter(|data| *data != "[DONE]")
+            .map(|data| serde_json::from_str(data).expect("SSE JSON event"))
+            .find(|event: &serde_json::Value| event["type"] == "response.completed")
+            .expect("terminal event");
+        assert_eq!(terminal["response"]["service_tier"], "default");
+    }
+
+    let requests = requests.lock().await;
+    assert_eq!(requests.len(), 2);
+    assert!(requests.iter().all(|request| request["service_tier"] == "priority"));
+    gateway.abort();
+    llm.abort();
+}
+
+#[tokio::test]
+async fn test_null_prompt_cache_key_preserves_proxy_body_and_is_omitted_by_executor() {
+    let (llm_url, requests, llm) = spawn_mock_vllm_json_capture().await;
+    let fixture = storage_backed_state(&llm_url).await;
+    let (gateway_url, gateway) = spawn_gateway(fixture.state.clone()).await;
+    for store in [false, true] {
+        let response = reqwest::Client::new()
+            .post(format!("{gateway_url}/v1/responses"))
+            .json(&serde_json::json!({
+                "model": "test", "input": "hi", "prompt_cache_key": null, "store": store
+            }))
+            .send()
+            .await
+            .expect("response request");
+        assert_eq!(response.status(), StatusCode::OK);
+        let _: serde_json::Value = response.json().await.expect("response body");
+    }
+    let requests = requests.lock().await;
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0].get("prompt_cache_key"), Some(&serde_json::Value::Null));
+    assert!(requests[1].get("prompt_cache_key").is_none());
+    gateway.abort();
+    llm.abort();
+}
+
+#[tokio::test]
+async fn test_max_tool_calls_is_validated_on_proxy_and_executor_routes() {
+    let (llm_url, requests, llm) = spawn_mock_vllm_json_capture().await;
+    let fixture = storage_backed_state(&llm_url).await;
+    let (gateway_url, gateway) = spawn_gateway(fixture.state.clone()).await;
+    let client = reqwest::Client::new();
+    for store in [false, true] {
+        for (value, code) in [
+            (serde_json::json!(0), "integer_below_min_value"),
+            (serde_json::json!("2"), "invalid_type"),
+        ] {
+            let response = client
+                .post(format!("{gateway_url}/v1/responses"))
+                .json(&serde_json::json!({"model": "test", "input": "hi", "store": store, "max_tool_calls": value}))
+                .send()
+                .await
+                .expect("response request");
+            assert_eq!(
+                response.status(),
+                StatusCode::BAD_REQUEST,
+                "store={store} value={value}"
+            );
+            let body: serde_json::Value = response.json().await.expect("error body");
+            assert_eq!(body["error"]["type"], "invalid_request_error");
+            assert_eq!(body["error"]["code"], code);
+            assert_eq!(body["error"]["param"], "max_tool_calls");
+        }
+    }
+    assert!(
+        requests.lock().await.is_empty(),
+        "invalid limits never reach the upstream"
+    );
+
+    let mut bodies = Vec::new();
+    for store in [false, true] {
+        let response = client
+            .post(format!("{gateway_url}/v1/responses"))
+            .json(&serde_json::json!({"model": "test", "input": "hi", "store": store, "max_tool_calls": 3}))
+            .send()
+            .await
+            .expect("response request");
+        assert_eq!(response.status(), StatusCode::OK);
+        bodies.push(response.json::<serde_json::Value>().await.expect("response body"));
+    }
+    assert_eq!(bodies[1]["max_tool_calls"], 3, "the executor echoes the request limit");
+    let requests = requests.lock().await;
+    assert_eq!(
+        requests[0]["max_tool_calls"], 3,
+        "the proxy forwards the request unchanged"
+    );
+    assert!(
+        requests[1].get("max_tool_calls").is_none(),
+        "the executor enforces the limit instead of forwarding it"
+    );
+    gateway.abort();
+    llm.abort();
+}
+
+#[tokio::test]
+async fn test_unsupported_parameters_are_rejected_by_typed_execution_and_passed_through_directly() {
+    let (llm_url, requests, llm) = spawn_mock_vllm_json_capture().await;
+    let fixture = storage_backed_state(&llm_url).await;
+    let (gateway_url, gateway) = spawn_gateway(fixture.state.clone()).await;
+    let client = reqwest::Client::new();
+    let post = |request: serde_json::Value| client.post(format!("{gateway_url}/v1/responses")).json(&request).send();
+    let unsupported = [
+        (
+            "background",
+            serde_json::json!(true),
+            "unsupported_value",
+            "background mode is not supported; omit `background` or set it to false",
+        ),
+        (
+            "prompt",
+            serde_json::json!({"id": "pmpt_1", "version": "2"}),
+            "unsupported_parameter",
+            "reusable prompt templates are not supported; send `instructions` and `input` instead of `prompt`",
+        ),
+    ];
+
+    // Storage, a continuation, or any other executor feature selects typed
+    // execution, which rejects before history lookup or inference.
+    for route in [
+        serde_json::json!({"store": true, "stream": false}),
+        serde_json::json!({"store": true, "stream": true}),
+        serde_json::json!({"store": false, "previous_response_id": "resp_missing"}),
+    ] {
+        for (param, value, code, message) in &unsupported {
+            let mut request = serde_json::json!({"model": "test", "input": "hi"});
+            request
+                .as_object_mut()
+                .unwrap()
+                .extend(route.as_object().unwrap().clone());
+            request[*param] = value.clone();
+            let response = post(request.clone()).await.expect("response request");
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{request}");
+            let body: serde_json::Value = response.json().await.expect("error body");
+            assert_eq!(
+                body,
+                serde_json::json!({"error": {
+                    "message": message, "type": "invalid_request_error", "code": code, "param": param
+                }}),
+                "{request}"
+            );
+        }
+    }
+    assert!(
+        requests.lock().await.is_empty(),
+        "typed execution rejects before any upstream call"
+    );
+
+    // Direct pass-through keeps the original body; the upstream decides.
+    for (param, value, ..) in &unsupported {
+        let mut request = serde_json::json!({"model": "test", "input": "hi", "store": false});
+        request[*param] = value.clone();
+        let response = post(request.clone()).await.expect("response request");
+        assert_eq!(response.status(), StatusCode::OK, "{request}");
+        let forwarded = requests.lock().await.last().cloned().expect("forwarded request");
+        assert_eq!(forwarded, request, "the direct route forwards the body unchanged");
+    }
+
+    // Typed execution accepts the explicit defaults and does not forward them.
+    let response = post(serde_json::json!({
+        "model": "test", "input": "hi", "store": true, "background": false, "prompt": null
+    }))
+    .await
+    .expect("response request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let forwarded = requests.lock().await.last().cloned().expect("forwarded request");
+    assert!(
+        forwarded.get("background").is_none() && forwarded.get("prompt").is_none(),
+        "{forwarded}"
+    );
+    gateway.abort();
+    llm.abort();
+}
+
+#[tokio::test]
+async fn test_non_boolean_background_is_forwarded_directly_and_rejected_by_typed_execution() {
+    let (llm_url, requests, llm) = spawn_mock_vllm_json_capture().await;
+    let fixture = storage_backed_state(&llm_url).await;
+    let (gateway_url, gateway) = spawn_gateway(fixture.state.clone()).await;
+    let client = reqwest::Client::new();
+    let post = |request: serde_json::Value| client.post(format!("{gateway_url}/v1/responses")).json(&request).send();
+    let values = [
+        (serde_json::json!(0), "an integer"),
+        (serde_json::json!("false"), "a string"),
+        (serde_json::json!({}), "an object"),
+        (serde_json::json!([]), "an array"),
+        (serde_json::json!(0.5), "a decimal number"),
+    ];
+
+    // Direct pass-through keeps the original body: the upstream decides.
+    for stream in [false, true] {
+        for (value, _) in &values {
+            let request = serde_json::json!({
+                "model": "test", "input": "hi", "store": false, "stream": stream, "background": value
+            });
+            let response = post(request.clone()).await.expect("response request");
+            assert_eq!(response.status(), StatusCode::OK, "{request}");
+            let forwarded = requests.lock().await.last().cloned().expect("forwarded request");
+            assert_eq!(forwarded, request, "the direct route forwards the body unchanged");
+        }
+    }
+    let forwarded = requests.lock().await.len();
+
+    // Typed execution rejects the value before any upstream call.
+    for stream in [false, true] {
+        for (value, kind) in &values {
+            let request = serde_json::json!({
+                "model": "test", "input": "hi", "store": true, "stream": stream, "background": value
+            });
+            let response = post(request.clone()).await.expect("response request");
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{request}");
+            assert_eq!(
+                response.json::<serde_json::Value>().await.expect("error body"),
+                serde_json::json!({"error": {
+                    "message": format!("Invalid type for 'background': expected a boolean, but got {kind} instead."),
+                    "type": "invalid_request_error",
+                    "code": "invalid_type",
+                    "param": "background"
+                }}),
+                "{request}"
+            );
+        }
+    }
+    assert_eq!(
+        requests.lock().await.len(),
+        forwarded,
+        "typed execution never reaches the upstream"
+    );
+    gateway.abort();
+    llm.abort();
 }
 
 #[tokio::test]
@@ -1553,4 +2121,1084 @@ async fn test_oversized_body_returns_413() {
 
     // Assert
     assert_eq!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
+}
+
+/// The configured ceiling covers the serialized request, so a body only a few
+/// hundred bytes long is rejected once the limit is lowered to match.
+#[tokio::test]
+async fn test_configured_request_size_limit_rejects_oversized_body() {
+    // Arrange — a 500-byte ceiling; the LLM is never reached.
+    let (llm_url, _h1) = spawn_mock_llm().await;
+    let state = test_state_with_max_request_body_size(&test_config(&llm_url), SMALL_REQUEST_SIZE_LIMIT);
+    let (gw_url, _h2) = spawn_gateway(state).await;
+
+    // Act
+    let resp = reqwest::Client::new()
+        .post(format!("{gw_url}/v1/responses"))
+        .header("Content-Type", "application/json")
+        .body("x".repeat(SMALL_REQUEST_SIZE_LIMIT.get() + 1))
+        .send()
+        .await
+        .unwrap();
+
+    // Assert
+    assert_eq!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(
+        resp.json::<serde_json::Value>().await.unwrap()["error"]["code"],
+        "body_too_large"
+    );
+}
+
+#[tokio::test]
+async fn test_configured_request_size_limit_rejects_oversized_compaction_body() {
+    // Arrange — `/v1/responses/compact` reads through the same configured ceiling.
+    let (llm_url, _h1) = spawn_mock_llm().await;
+    let state = test_state_with_max_request_body_size(&test_config(&llm_url), SMALL_REQUEST_SIZE_LIMIT);
+    let (gw_url, _h2) = spawn_gateway(state).await;
+
+    // Act
+    let resp = reqwest::Client::new()
+        .post(format!("{gw_url}/v1/responses/compact"))
+        .header("Content-Type", "application/json")
+        .body("x".repeat(SMALL_REQUEST_SIZE_LIMIT.get() + 1))
+        .send()
+        .await
+        .unwrap();
+
+    // Assert
+    assert_eq!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
+}
+
+#[tokio::test]
+async fn test_raised_request_size_limit_admits_larger_body() {
+    // Arrange — the same payload shape that a 500-byte ceiling would reject.
+    let (llm_url, requests, _h1) = spawn_mock_vllm_json_capture().await;
+    let state =
+        test_state_with_max_request_body_size(&test_config(&llm_url), NonZeroUsize::new(64 * 1024).expect("nonzero"));
+    let (gw_url, _h2) = spawn_gateway(state).await;
+    let prompt = "x".repeat(4 * 1024);
+
+    // Act
+    let resp = reqwest::Client::new()
+        .post(format!("{gw_url}/v1/responses"))
+        .json(&serde_json::json!({
+            "model": "test",
+            "input": [{"type": "message", "role": "user", "content": prompt}],
+            "store": false,
+            "stream": false
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    // Assert — the raised ceiling lets the request through to the upstream.
+    assert_eq!(resp.status(), StatusCode::OK);
+    let requests = requests.lock().await;
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0]["input"][0]["content"].as_str().unwrap().len(), 4 * 1024);
+}
+
+// --- Image preservation through the Responses HTTP transport (issue #253) ---
+//
+// A 1x1 red PNG and a 1x1 blue PNG, inline as data URLs. They are real, valid
+// PNGs with distinguishable pixels, so an ordering assertion cannot pass by
+// accident, and no binary fixture has to ship with the tests. The gateway never
+// decodes them: decoding and preprocessing stay in vLLM.
+const RED_PIXEL_PNG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mP4z8AAAAMBAQD3A0FDAAAAAElFTkSuQmCC";
+const BLUE_PIXEL_PNG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mNgYPgPAAEDAQA2dBFAAAAAAElFTkSuQmCC";
+
+fn image_part(image_url: &str, detail: Option<&str>) -> serde_json::Value {
+    match detail {
+        Some(detail) => serde_json::json!({"type": "input_image", "image_url": image_url, "detail": detail}),
+        None => serde_json::json!({"type": "input_image", "image_url": image_url}),
+    }
+}
+
+/// Spawn a mock vLLM that captures every request body and answers each one with a
+/// distinct completed assistant message, so a stored turn rehydrates real history.
+async fn spawn_mock_vllm_json_capture_answers()
+-> (String, Arc<Mutex<Vec<serde_json::Value>>>, tokio::task::JoinHandle<()>) {
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let route_requests = Arc::clone(&requests);
+    let turn = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let app = Router::new().route(
+        "/v1/responses",
+        post(move |body: Bytes| {
+            let route_requests = Arc::clone(&route_requests);
+            let turn = Arc::clone(&turn);
+            async move {
+                let body = serde_json::from_slice::<serde_json::Value>(&body).unwrap();
+                route_requests.lock().await.push(body);
+                let index = turn.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                let payload = serde_json::json!({
+                    "id": format!("resp_upstream_{index}"),
+                    "object": "response",
+                    "status": "completed",
+                    "model": "test",
+                    "created_at": 0,
+                    "output": [{
+                        "id": format!("msg_upstream_{index}"),
+                        "type": "message",
+                        "role": "assistant",
+                        "status": "completed",
+                        "content": [{"type": "output_text", "text": format!("ANSWER {index}")}]
+                    }]
+                });
+                axum::response::Response::builder()
+                    .status(200)
+                    .header("Content-Type", "application/json")
+                    .body(axum::body::Body::from(payload.to_string()))
+                    .unwrap()
+                    .into_response()
+            }
+        }),
+    );
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let handle = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (format!("http://{addr}"), requests, handle)
+}
+
+async fn post_response(gateway_url: &str, body: &serde_json::Value) -> serde_json::Value {
+    let response = reqwest::Client::new()
+        .post(format!("{gateway_url}/v1/responses"))
+        .json(body)
+        .send()
+        .await
+        .expect("response request");
+    assert_eq!(response.status(), StatusCode::OK);
+    response.json().await.expect("response JSON")
+}
+
+#[tokio::test]
+async fn test_http_preserves_mixed_text_and_image_ordering() {
+    let (llm_url, requests, _llm) = spawn_mock_vllm_json_capture().await;
+    let fixture = storage_backed_state(&llm_url).await;
+    let (gateway_url, _gateway) = spawn_gateway(fixture.state.clone()).await;
+    let content = serde_json::json!([
+        {"type": "input_text", "text": "first"},
+        image_part(RED_PIXEL_PNG, Some("low")),
+        {"type": "input_text", "text": "between"},
+        image_part(BLUE_PIXEL_PNG, Some("high")),
+        {"type": "input_text", "text": "last"}
+    ]);
+
+    post_response(
+        &gateway_url,
+        &serde_json::json!({
+            "model": "test",
+            "input": [{"type": "message", "role": "user", "content": content}],
+            "store": true,
+            "stream": false
+        }),
+    )
+    .await;
+
+    let requests = requests.lock().await;
+    assert_eq!(requests.len(), 1);
+    assert_eq!(
+        requests[0]["input"][0]["content"], content,
+        "mixed text and image parts must reach vLLM in the order the client sent them"
+    );
+}
+
+#[tokio::test]
+async fn test_http_preserves_multiple_images_across_messages() {
+    let (llm_url, requests, _llm) = spawn_mock_vllm_json_capture().await;
+    let fixture = storage_backed_state(&llm_url).await;
+    let (gateway_url, _gateway) = spawn_gateway(fixture.state.clone()).await;
+    let input = serde_json::json!([
+        {
+            "type": "message",
+            "role": "user",
+            "content": [{"type": "input_text", "text": "look at this"}, image_part(RED_PIXEL_PNG, None)]
+        },
+        {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "I see red."}]},
+        {
+            "type": "message",
+            "role": "user",
+            "content": [image_part(BLUE_PIXEL_PNG, None), {"type": "input_text", "text": "and this?"}]
+        }
+    ]);
+
+    post_response(
+        &gateway_url,
+        &serde_json::json!({"model": "test", "input": input, "store": true, "stream": false}),
+    )
+    .await;
+
+    let requests = requests.lock().await;
+    assert_eq!(requests.len(), 1);
+    let mut expected_input = input.clone();
+    expected_input[0]["content"][1]["detail"] = "auto".into();
+    expected_input[2]["content"][0]["detail"] = "auto".into();
+    assert_eq!(requests[0]["input"], expected_input);
+    let images = requests[0]["input"]
+        .as_array()
+        .expect("input items")
+        .iter()
+        .filter_map(|item| item["content"].as_array())
+        .flatten()
+        .filter(|part| part["type"] == "input_image")
+        .map(|part| part["image_url"].as_str().expect("image URL"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        images,
+        vec![RED_PIXEL_PNG, BLUE_PIXEL_PNG],
+        "each turn's image must survive, in turn order"
+    );
+}
+
+#[tokio::test]
+async fn test_http_client_view_image_tool_output_reaches_next_round() {
+    let (llm_url, requests, _llm) = spawn_mock_vllm_json_capture().await;
+    let fixture = storage_backed_state(&llm_url).await;
+    let (gateway_url, _gateway) = spawn_gateway(fixture.state.clone()).await;
+    let tool_output = serde_json::json!([
+        {"type": "input_text", "text": "attached local image path: diagram.png"},
+        image_part(RED_PIXEL_PNG, None)
+    ]);
+
+    post_response(
+        &gateway_url,
+        &serde_json::json!({
+            "model": "test",
+            "tools": [{
+                "type": "function",
+                "name": "view_image",
+                "description": "Attach a local image to the conversation.",
+                "parameters": {"type": "object", "properties": {"path": {"type": "string"}}}
+            }],
+            "input": [
+                {"type": "message", "role": "user", "content": "look at diagram.png"},
+                {
+                    "type": "function_call",
+                    "call_id": "call_view_image_1",
+                    "name": "view_image",
+                    "arguments": "{\"path\":\"diagram.png\"}"
+                },
+                {"type": "function_call_output", "call_id": "call_view_image_1", "output": tool_output}
+            ],
+            "store": true,
+            "stream": false
+        }),
+    )
+    .await;
+
+    let requests = requests.lock().await;
+    let output = requests[0]["input"]
+        .as_array()
+        .expect("input items")
+        .iter()
+        .find(|item| item["type"] == "function_call_output")
+        .map(|item| &item["output"])
+        .expect("client tool output should reach the next inference round");
+    assert!(
+        output.is_array(),
+        "structured tool output must stay an array, not an escaped JSON string: {output}"
+    );
+    assert_eq!(output, &tool_output);
+}
+
+#[tokio::test]
+async fn test_http_custom_tool_image_output_normalizes_without_stringifying() {
+    let (llm_url, requests, _llm) = spawn_mock_vllm_json_capture().await;
+    let fixture = storage_backed_state(&llm_url).await;
+    let (gateway_url, _gateway) = spawn_gateway(fixture.state.clone()).await;
+    let tool_output = serde_json::json!([
+        {"type": "input_text", "text": "screenshot"},
+        image_part(BLUE_PIXEL_PNG, Some("auto"))
+    ]);
+
+    post_response(
+        &gateway_url,
+        &serde_json::json!({
+            "model": "test",
+            "tools": [{"type": "custom", "name": "grab_screenshot", "description": "Capture the screen."}],
+            "input": [
+                {
+                    "type": "custom_tool_call",
+                    "id": "ctc_1",
+                    "call_id": "call_custom_1",
+                    "name": "grab_screenshot",
+                    "input": "screen",
+                    "status": "completed"
+                },
+                {"type": "custom_tool_call_output", "call_id": "call_custom_1", "output": tool_output}
+            ],
+            "store": true,
+            "stream": false
+        }),
+    )
+    .await;
+
+    let requests = requests.lock().await;
+    let output = requests[0]["input"]
+        .as_array()
+        .expect("input items")
+        .iter()
+        .find(|item| item["type"] == "function_call_output")
+        .map(|item| &item["output"])
+        .expect("a custom-tool output must normalize to a function-tool output");
+    assert!(
+        output.is_array(),
+        "normalization must not stringify the array: {output}"
+    );
+    assert_eq!(output, &tool_output);
+}
+
+#[tokio::test]
+async fn test_http_previous_response_id_continuation_preserves_images() {
+    let (llm_url, requests, _llm) = spawn_mock_vllm_json_capture_answers().await;
+    let fixture = storage_backed_state(&llm_url).await;
+    let (gateway_url, _gateway) = spawn_gateway(fixture.state.clone()).await;
+    let content = serde_json::json!([
+        {"type": "input_text", "text": "describe this"},
+        image_part(RED_PIXEL_PNG, Some("low"))
+    ]);
+
+    let first = post_response(
+        &gateway_url,
+        &serde_json::json!({
+            "model": "test",
+            "input": [{"type": "message", "role": "user", "content": content}],
+            "store": true,
+            "stream": false
+        }),
+    )
+    .await;
+    let previous_response_id = first["id"].as_str().expect("stored response ID");
+
+    post_response(
+        &gateway_url,
+        &serde_json::json!({
+            "model": "test",
+            "previous_response_id": previous_response_id,
+            "input": [{"type": "message", "role": "user", "content": "and now?"}],
+            "store": true,
+            "stream": false
+        }),
+    )
+    .await;
+
+    let requests = requests.lock().await;
+    assert_eq!(requests.len(), 2);
+    let history = requests[1]["input"].as_array().expect("rehydrated history");
+    assert_eq!(
+        history[0]["content"], content,
+        "the stored image must survive the round trip through the response store"
+    );
+    assert_eq!(history[1]["role"], "assistant");
+    assert_eq!(history[2]["content"], "and now?");
+}
+
+#[tokio::test]
+async fn test_http_typed_path_preserves_extension_fields_on_image_parts() {
+    // The typed store=true path must forward a known part exactly as sent,
+    // unmodeled fields included, and persist them for continuation — the same
+    // guarantee the raw store=false path gives by forwarding bytes verbatim.
+    // Tool-output parts share the same content structs; their round trip is
+    // covered by the core unit tests.
+    let (llm_url, requests, _llm) = spawn_mock_vllm_json_capture_answers().await;
+    let fixture = storage_backed_state(&llm_url).await;
+    let (gateway_url, _gateway) = spawn_gateway(fixture.state.clone()).await;
+    let content = serde_json::json!([
+        {"type": "input_text", "text": "describe this", "x_future_text": 1},
+        {"type": "input_image", "image_url": RED_PIXEL_PNG, "detail": "low", "x_future_field": "kept"}
+    ]);
+    let first = post_response(
+        &gateway_url,
+        &serde_json::json!({
+            "model": "test",
+            "input": [{"type": "message", "role": "user", "content": content}],
+            "store": true,
+            "stream": false
+        }),
+    )
+    .await;
+    let previous_response_id = first["id"].as_str().expect("stored response ID");
+
+    post_response(
+        &gateway_url,
+        &serde_json::json!({
+            "model": "test",
+            "previous_response_id": previous_response_id,
+            "input": [{"type": "message", "role": "user", "content": "and now?"}],
+            "store": true,
+            "stream": false
+        }),
+    )
+    .await;
+
+    let requests = requests.lock().await;
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        requests[0]["input"][0]["content"], content,
+        "extension fields must be forwarded on the first turn"
+    );
+    let history = requests[1]["input"].as_array().expect("rehydrated history");
+    assert_eq!(
+        history[0]["content"], content,
+        "extension fields must survive persistence and rehydration"
+    );
+    assert_eq!(history[2]["content"], "and now?");
+}
+
+#[tokio::test]
+async fn test_http_conversation_rehydration_preserves_images() {
+    let (llm_url, requests, _llm) = spawn_mock_vllm_json_capture_answers().await;
+    let fixture = storage_backed_state(&llm_url).await;
+    let (gateway_url, _gateway) = spawn_gateway(fixture.state.clone()).await;
+    let client = reqwest::Client::new();
+    let conversation_id = create_conversation(&client, &gateway_url).await;
+    let content = serde_json::json!([
+        {"type": "input_text", "text": "conversation image"},
+        image_part(BLUE_PIXEL_PNG, None)
+    ]);
+
+    post_response(
+        &gateway_url,
+        &serde_json::json!({
+            "model": "test",
+            "conversation_id": conversation_id,
+            "input": [{"type": "message", "role": "user", "content": content}],
+            "store": true,
+            "stream": false
+        }),
+    )
+    .await;
+    post_response(
+        &gateway_url,
+        &serde_json::json!({
+            "model": "test",
+            "conversation_id": conversation_id,
+            "input": [{"type": "message", "role": "user", "content": "follow up"}],
+            "store": true,
+            "stream": false
+        }),
+    )
+    .await;
+
+    let requests = requests.lock().await;
+    assert_eq!(requests.len(), 2);
+    let history = requests[1]["input"].as_array().expect("rehydrated history");
+    let mut expected_content = content.clone();
+    expected_content[1]["detail"] = "auto".into();
+    assert_eq!(history[0]["content"], expected_content);
+    assert_eq!(history.last().expect("newest turn")["content"], "follow up");
+}
+
+#[tokio::test]
+async fn test_http_stored_tool_image_output_survives_continuation() {
+    let (llm_url, requests, _llm) = spawn_mock_vllm_json_capture_answers().await;
+    let fixture = storage_backed_state(&llm_url).await;
+    let (gateway_url, _gateway) = spawn_gateway(fixture.state.clone()).await;
+    let tool_output = serde_json::json!([
+        {"type": "input_text", "text": "attached local image path: diagram.png"},
+        image_part(RED_PIXEL_PNG, None)
+    ]);
+
+    let first = post_response(
+        &gateway_url,
+        &serde_json::json!({
+            "model": "test",
+            "tools": [{
+                "type": "function",
+                "name": "view_image",
+                "description": "Attach a local image to the conversation.",
+                "parameters": {"type": "object", "properties": {"path": {"type": "string"}}}
+            }],
+            "input": [
+                {"type": "message", "role": "user", "content": "look at diagram.png"},
+                {
+                    "type": "function_call",
+                    "call_id": "call_view_image_1",
+                    "name": "view_image",
+                    "arguments": "{\"path\":\"diagram.png\"}"
+                },
+                {"type": "function_call_output", "call_id": "call_view_image_1", "output": tool_output}
+            ],
+            "store": true,
+            "stream": false
+        }),
+    )
+    .await;
+
+    post_response(
+        &gateway_url,
+        &serde_json::json!({
+            "model": "test",
+            "previous_response_id": first["id"].as_str().expect("stored response ID"),
+            "input": [{"type": "message", "role": "user", "content": "describe it"}],
+            "store": true,
+            "stream": false
+        }),
+    )
+    .await;
+
+    let requests = requests.lock().await;
+    let stored_output = requests[1]["input"]
+        .as_array()
+        .expect("rehydrated history")
+        .iter()
+        .find(|item| item["type"] == "function_call_output")
+        .map(|item| &item["output"])
+        .expect("the stored tool output must rehydrate");
+    assert!(stored_output.is_array(), "persistence must not stringify the array");
+    assert_eq!(stored_output, &tool_output);
+}
+
+#[tokio::test]
+async fn test_store_false_proxies_image_content_verbatim() {
+    let (llm_url, requests, _llm) = spawn_mock_vllm_json_capture_bytes().await;
+    let (gateway_url, _gateway) = spawn_gateway(test_state(&test_config(&llm_url))).await;
+    // An unmodeled field on the image part proves the raw proxy forwards bytes
+    // rather than reserializing through the gateway's typed input model.
+    let request_body = format!(
+        r#"{{"model":"test","store":false,"stream":false,"input":[{{"type":"message","role":"user","content":[{{"type":"input_image","image_url":"{RED_PIXEL_PNG}","detail":"low","x_future_field":"kept"}},{{"type":"input_text","text":"raw proxy"}}]}}]}}"#
+    );
+
+    let response = reqwest::Client::new()
+        .post(format!("{gateway_url}/v1/responses"))
+        .header("Content-Type", "application/json")
+        .body(request_body.clone())
+        .send()
+        .await
+        .expect("raw proxy request");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let requests = requests.lock().await;
+    assert_eq!(requests.len(), 1);
+    assert_eq!(
+        std::str::from_utf8(&requests[0]).expect("upstream body should be UTF-8"),
+        request_body,
+        "a stateless request must reach vLLM byte for byte"
+    );
+}
+
+#[tokio::test]
+async fn test_http_text_only_model_still_forwards_images() {
+    // The gateway preserves image content regardless of model capability and
+    // supplies vLLM's required default image detail when the client omits it.
+    let (llm_url, requests, _llm) = spawn_mock_vllm_json_capture().await;
+    let fixture = storage_backed_state(&llm_url).await;
+    let (gateway_url, _gateway) = spawn_gateway(fixture.state.clone()).await;
+    let content = serde_json::json!([
+        {"type": "input_text", "text": "text-only model"},
+        image_part(RED_PIXEL_PNG, None)
+    ]);
+
+    post_response(
+        &gateway_url,
+        &serde_json::json!({
+            "model": "text-only-model",
+            "input": [{"type": "message", "role": "user", "content": content}],
+            "store": true,
+            "stream": false
+        }),
+    )
+    .await;
+
+    let requests = requests.lock().await;
+    assert_eq!(requests[0]["model"], "text-only-model");
+    let mut expected_content = content.clone();
+    expected_content[1]["detail"] = "auto".into();
+    assert_eq!(requests[0]["input"][0]["content"], expected_content);
+}
+
+async fn stored_row_counts(pool: &Arc<DbPool>) -> (i64, i64) {
+    let responses = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM responses")
+        .fetch_one(pool.as_ref())
+        .await
+        .expect("response count");
+    let items = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM items")
+        .fetch_one(pool.as_ref())
+        .await
+        .expect("item count");
+    (responses, items)
+}
+
+/// Post a typed request that must be rejected before inference, returning the
+/// error message once the upstream and storage are proven untouched.
+async fn post_rejected_message_content(input: serde_json::Value, expected_path: &str, expected_type: &str) -> String {
+    let (llm_url, requests, _llm) = spawn_mock_vllm_json_capture().await;
+    let fixture = storage_backed_state(&llm_url).await;
+    let (gateway_url, _gateway) = spawn_gateway(fixture.state.clone()).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("{gateway_url}/v1/responses"))
+        .json(&serde_json::json!({"model": "test", "input": input, "store": true, "stream": false}))
+        .send()
+        .await
+        .expect("response request");
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body: serde_json::Value = response.json().await.expect("error JSON");
+    assert_eq!(body["error"]["type"], "invalid_request_error", "{body}");
+    let message = body["error"]["message"].as_str().expect("error message").to_owned();
+    assert!(message.contains(expected_path), "{message}");
+    assert!(message.contains(expected_type), "{message}");
+
+    assert!(
+        requests.lock().await.is_empty(),
+        "a rejected message must never reach the upstream"
+    );
+    assert_eq!(
+        stored_row_counts(&fixture.pool).await,
+        (0, 0),
+        "a rejected message must not be persisted, not even as a synthetic part"
+    );
+    message
+}
+
+#[tokio::test]
+async fn test_http_unmodeled_content_part_is_rejected_not_dropped() {
+    // A part the gateway cannot model is rejected instead of dropped: dropping
+    // it would forward a message the client did not send, and would forward a
+    // different message than the raw store=false path does for the same bytes.
+    let message = post_rejected_message_content(
+        serde_json::json!([{"type": "message", "role": "user", "content": [
+            {"type": "input_text", "text": "before"},
+            {"type": "input_audio", "audio_url": "https://example.com/clip.wav"},
+            image_part(RED_PIXEL_PNG, None)
+        ]}]),
+        "input[0].content[1]",
+        "`input_audio`",
+    )
+    .await;
+    assert!(
+        !message.contains("clip.wav"),
+        "do not reflect part contents in the error: {message}"
+    );
+}
+
+#[tokio::test]
+async fn test_http_message_with_only_unmodeled_content_is_rejected() {
+    post_rejected_message_content(
+        serde_json::json!([{"type": "message", "role": "user", "content": [
+            {"type": "input_audio", "audio_url": "https://example.com/clip.wav"}
+        ]}]),
+        "input[0].content[0]",
+        "`input_audio`",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_http_message_with_empty_content_is_rejected() {
+    post_rejected_message_content(
+        serde_json::json!([
+            {"type": "message", "role": "user", "content": [image_part(RED_PIXEL_PNG, None)]},
+            {"type": "message", "role": "user", "content": []}
+        ]),
+        "input[1].content",
+        "at least one content part",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_prompt_cache_retention_matches_pass_through_and_typed_sse_execution() {
+    let (llm_url, requests, llm) = spawn_tool_search_sse_sequence(vec![final_message_sse(); 2]).await;
+    let fixture = storage_backed_state(&llm_url).await;
+    let (gateway_url, gateway) = spawn_gateway(fixture.state.clone()).await;
+    for store in [false, true] {
+        let response = reqwest::Client::new()
+            .post(format!("{gateway_url}/v1/responses"))
+            .json(&serde_json::json!({
+                "model": "test", "input": "hi", "prompt_cache_retention": "24h",
+                "store": store, "stream": true
+            }))
+            .send()
+            .await
+            .expect("streaming response");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(
+            response.headers()[header::CONTENT_TYPE]
+                .to_str()
+                .unwrap()
+                .starts_with("text/event-stream")
+        );
+        let body = response.text().await.expect("complete SSE body");
+        let events: Vec<serde_json::Value> = body
+            .lines()
+            .filter_map(|line| line.strip_prefix("data:"))
+            .map(str::trim)
+            .filter(|data| *data != "[DONE]")
+            .map(|data| serde_json::from_str(data).expect("SSE JSON event"))
+            .collect();
+        assert_eq!(events.last().expect("terminal event")["type"], "response.completed");
+    }
+    let requests = requests.lock().await;
+    assert_eq!(requests.len(), 2);
+    for request in requests.iter() {
+        assert_eq!(request["prompt_cache_retention"], "24h");
+        assert_eq!(request["stream"], true);
+    }
+    gateway.abort();
+    llm.abort();
+}
+
+#[tokio::test]
+async fn test_prompt_cache_retention_matches_pass_through_and_typed_continuation() {
+    let (llm_url, requests, _llm) = spawn_mock_vllm_json_capture().await;
+    let fixture = storage_backed_state(&llm_url).await;
+    let (gateway_url, _gateway) = spawn_gateway(fixture.state.clone()).await;
+    let client = reqwest::Client::new();
+    let mut parent = None;
+    for retention in ["in_memory", "24h"] {
+        for store in [false, true] {
+            let response = client
+                .post(format!("{gateway_url}/v1/responses"))
+                .json(&serde_json::json!({"model":"test","input":"parent context",
+                    "prompt_cache_retention":retention,"store":store}))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let body: serde_json::Value = response.json().await.unwrap();
+            if store {
+                parent = Some(body["id"].as_str().unwrap().to_owned());
+            }
+        }
+    }
+    for retention in [
+        None,
+        Some(serde_json::Value::Null),
+        Some(serde_json::json!("in_memory")),
+    ] {
+        let mut request = serde_json::json!({"model":"test","input":"continue",
+            "previous_response_id":parent,"store":true});
+        if let Some(retention) = retention {
+            request["prompt_cache_retention"] = retention;
+        }
+        let response = client
+            .post(format!("{gateway_url}/v1/responses"))
+            .json(&request)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let _: serde_json::Value = response.json().await.unwrap();
+    }
+    let requests = requests.lock().await;
+    assert_eq!(requests.len(), 7);
+    for (i, retention) in ["in_memory", "in_memory", "24h", "24h"].iter().enumerate() {
+        assert_eq!(requests[i]["prompt_cache_retention"], *retention);
+    }
+    assert!(requests[4].get("prompt_cache_retention").is_none());
+    assert!(requests[5].get("prompt_cache_retention").is_none());
+    assert_eq!(requests[6]["prompt_cache_retention"], "in_memory");
+    for request in &requests[4..] {
+        assert_eq!(request["input"][0]["content"], "parent context");
+        assert!(request.get("previous_response_id").is_none());
+    }
+}
+
+#[tokio::test]
+async fn test_prompt_cache_retention_validates_before_proxy_or_execution() {
+    let (llm_url, requests, _llm) = spawn_mock_vllm_json_capture().await;
+    let fixture = storage_backed_state(&llm_url).await;
+    let (gateway_url, _gateway) = spawn_gateway(fixture.state.clone()).await;
+    let client = reqwest::Client::new();
+    for store in [false, true] {
+        for value in [
+            serde_json::json!("30m"),
+            serde_json::json!(""),
+            serde_json::json!(1),
+            serde_json::json!(true),
+            serde_json::json!([]),
+            serde_json::json!({}),
+        ] {
+            let response = client
+                .post(format!("{gateway_url}/v1/responses"))
+                .json(&serde_json::json!({"model":"test","input":"hi",
+                    "prompt_cache_retention":value,"store":store}))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            let body: serde_json::Value = response.json().await.unwrap();
+            assert!(body["error"]["message"].as_str().unwrap().contains("expected"));
+        }
+    }
+    assert!(requests.lock().await.is_empty());
+    for store in [false, true] {
+        let response = client
+            .post(format!("{gateway_url}/v1/responses"))
+            .json(&serde_json::json!({"model":"test","input":"hi",
+                "prompt_cache_retention":null,"store":store}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let _: serde_json::Value = response.json().await.unwrap();
+    }
+    let requests = requests.lock().await;
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        requests[0].get("prompt_cache_retention"),
+        Some(&serde_json::Value::Null)
+    );
+    assert!(requests[1].get("prompt_cache_retention").is_none());
+}
+
+#[tokio::test]
+async fn cache_usage_survives_http_json_sse_and_stored_retrieval() {
+    for stream in [false, true] {
+        for writes in [
+            None,
+            Some(serde_json::Value::Null),
+            Some(serde_json::json!(0)),
+            Some(serde_json::json!(7)),
+        ] {
+            let mut usage = serde_json::json!({"input_tokens":30,"output_tokens":4,"total_tokens":37,
+                "input_tokens_details":{"cached_tokens":9},"output_tokens_details":{"reasoning_tokens":2}});
+            if let Some(writes) = &writes {
+                usage["input_tokens_details"]["cache_write_tokens"] = writes.clone();
+            }
+            let (llm_url, requests, _llm) = if stream {
+                let sse = final_message_sse().replace("\"usage\":null", &format!("\"usage\":{usage}"));
+                spawn_tool_search_sse_sequence(vec![sse; 2]).await
+            } else {
+                spawn_mock_vllm_json_capture_body(serde_json::json!({"id":"upstream","object":"response",
+                    "created_at":0,"model":"test","status":"completed","output":[],"usage":usage}))
+                .await
+            };
+            let fixture = storage_backed_state(&llm_url).await;
+            let (gateway_url, _gateway) = spawn_gateway(fixture.state.clone()).await;
+            let client = reqwest::Client::new();
+            for store in [false, true] {
+                let response = client
+                    .post(format!("{gateway_url}/v1/responses"))
+                    .json(&serde_json::json!({"model":"test","input":"hi","store":store,"stream":stream}))
+                    .send()
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), StatusCode::OK);
+                let body = if stream {
+                    response
+                        .text()
+                        .await
+                        .unwrap()
+                        .lines()
+                        .filter_map(|line| line.strip_prefix("data:"))
+                        .filter_map(|data| serde_json::from_str::<serde_json::Value>(data.trim()).ok())
+                        .find(|event| event["type"] == "response.completed")
+                        .unwrap()["response"]
+                        .clone()
+                } else {
+                    response.json::<serde_json::Value>().await.unwrap()
+                };
+                let mut expected = usage.clone();
+                if store && writes.as_ref().is_some_and(serde_json::Value::is_null) {
+                    expected["input_tokens_details"]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("cache_write_tokens");
+                }
+                assert_eq!(
+                    body["usage"], expected,
+                    "stream={stream}, store={store}, writes={writes:?}"
+                );
+                if store {
+                    let stored: serde_json::Value = client
+                        .get(format!("{gateway_url}/v1/responses/{}", body["id"].as_str().unwrap()))
+                        .bearer_auth("test-key")
+                        .send()
+                        .await
+                        .unwrap()
+                        .json()
+                        .await
+                        .unwrap();
+                    assert_eq!(stored["usage"], expected);
+                }
+            }
+            assert_eq!(requests.lock().await.len(), 2, "retrieval must not run inference");
+        }
+    }
+}
+
+#[tokio::test]
+async fn cache_usage_is_scoped_to_http_continuation_with_restored_history() {
+    for stream in [false, true] {
+        let parent_usage = serde_json::json!({"input_tokens":30,"output_tokens":4,"total_tokens":37,
+            "input_tokens_details":{"cached_tokens":9,"cache_write_tokens":7},
+            "output_tokens_details":{"reasoning_tokens":2}});
+        let next_usage = serde_json::json!({"input_tokens":12,"output_tokens":1,"total_tokens":13,
+            "input_tokens_details":{"cached_tokens":2},"output_tokens_details":{"reasoning_tokens":0}});
+        let usages = [parent_usage, next_usage];
+        let (llm_url, requests, _llm) = if stream {
+            spawn_tool_search_sse_sequence(
+                usages
+                    .iter()
+                    .enumerate()
+                    .map(|(round, usage)| {
+                        final_message_sse()
+                            .replace("up_final", &format!("up_{round}"))
+                            .replace("msg_final", &format!("msg_{round}"))
+                            .replace("\"usage\":null", &format!("\"usage\":{usage}"))
+                    })
+                    .collect(),
+            )
+            .await
+        } else {
+            spawn_mock_vllm_json_capture_sequence(
+                usages
+                    .iter()
+                    .map(|usage| {
+                        serde_json::json!({"id":"upstream","object":"response","created_at":0,
+                    "model":"test","status":"completed","output":[],"usage":usage})
+                    })
+                    .collect(),
+            )
+            .await
+        };
+        let fixture = storage_backed_state(&llm_url).await;
+        let (gateway_url, _gateway) = spawn_gateway(fixture.state.clone()).await;
+        let client = reqwest::Client::new();
+        let mut previous = None;
+        for (input, expected) in ["parent context", "continue"].into_iter().zip(usages) {
+            let response = client
+                .post(format!("{gateway_url}/v1/responses"))
+                .json(&serde_json::json!({"model":"test","input":input,"store":true,
+                    "stream":stream,"previous_response_id":previous}))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let body = if stream {
+                let text = response.text().await.unwrap();
+                text.lines()
+                    .filter_map(|line| line.strip_prefix("data:"))
+                    .filter_map(|data| serde_json::from_str::<serde_json::Value>(data.trim()).ok())
+                    .find(|event| event["type"] == "response.completed")
+                    .unwrap_or_else(|| panic!("missing completion for {input}: {text}"))["response"]
+                    .clone()
+            } else {
+                response.json::<serde_json::Value>().await.unwrap()
+            };
+            assert_eq!(body["usage"], expected, "stream={stream}, input={input}");
+            let id = body["id"].as_str().unwrap();
+            let stored: serde_json::Value = client
+                .get(format!("{gateway_url}/v1/responses/{id}"))
+                .bearer_auth("test-key")
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap();
+            assert_eq!(stored["usage"], expected);
+            previous = Some(id.to_owned());
+        }
+        let requests = requests.lock().await;
+        assert_eq!(requests.len(), 2, "retrieval must not run inference");
+        assert_eq!(requests[1]["input"][0]["content"], "parent context");
+        assert!(requests[1].get("previous_response_id").is_none());
+    }
+}
+
+/// Replays the recorded mixed-tool capture through the blocking HTTP transport. The client
+/// sees the declarations it submitted on the terminal payload and on retrieval, while
+/// inference keeps the lowered function schemas the capture recorded.
+#[tokio::test]
+async fn recorded_mixed_tool_capture_stays_public_over_http_json() {
+    let capture = common::load_mixed_gateway_capture(false);
+    let public_tools = common::mixed_capture_public_tools(&capture);
+    let upstream: serde_json::Value =
+        serde_json::from_str(&common::mixed_capture_upstream_fixture(&capture)).expect("recorded body is JSON");
+    let (llm_url, requests, _llm) = spawn_mock_vllm_json_capture_sequence(vec![upstream]).await;
+    let fixture = storage_backed_state(&llm_url).await;
+    let (gateway_url, _gateway) = spawn_gateway(fixture.state.clone()).await;
+    let client = reqwest::Client::new();
+
+    let response = client
+        .post(format!("{gateway_url}/v1/responses"))
+        .bearer_auth("test-key")
+        .json(&common::mixed_capture_client_request(&capture))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: serde_json::Value = response.json().await.unwrap();
+    common::assert_public_mixed_tools(&body, &public_tools, "terminal payload");
+    common::assert_recorded_mixed_output_kinds(&body, &capture, "terminal payload");
+
+    let id = body["id"].as_str().expect("response id");
+    let stored: serde_json::Value = client
+        .get(format!("{gateway_url}/v1/responses/{id}"))
+        .bearer_auth("test-key")
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(stored, body, "retrieval returns the stored response");
+    common::assert_public_mixed_tools(&stored, &public_tools, "stored response");
+
+    let requests = requests.lock().await;
+    assert_eq!(requests.len(), 1, "the replayed turn runs one inference round");
+    common::assert_lowered_mixed_upstream(&requests[0]);
+}
+
+/// Replays the same capture through the SSE transport: every lifecycle snapshot that carries
+/// a `response` object reports the submitted declarations, including the terminal frame that
+/// omits them, and retrieval returns them too.
+#[tokio::test]
+async fn recorded_mixed_tool_capture_stays_public_over_http_sse() {
+    let capture = common::load_mixed_gateway_capture(true);
+    let public_tools = common::mixed_capture_public_tools(&capture);
+    let upstream = common::mixed_capture_upstream_fixture(&capture);
+    let (llm_url, requests, _llm) = spawn_tool_search_sse_sequence(vec![upstream]).await;
+    let fixture = storage_backed_state(&llm_url).await;
+    let (gateway_url, _gateway) = spawn_gateway(fixture.state.clone()).await;
+    let client = reqwest::Client::new();
+
+    let response = client
+        .post(format!("{gateway_url}/v1/responses"))
+        .bearer_auth("test-key")
+        .json(&common::mixed_capture_client_request(&capture))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let events = sse_events(&response.text().await.unwrap());
+
+    let lifecycle: Vec<&str> = events
+        .iter()
+        .filter(|event| event.get("response").is_some())
+        .filter_map(|event| event["type"].as_str())
+        .collect();
+    assert_eq!(
+        lifecycle,
+        ["response.created", "response.in_progress", "response.completed"],
+        "the replay covers the three lifecycle snapshots"
+    );
+    for event in &events {
+        if let Some(terminal) = event.get("response") {
+            common::assert_public_mixed_tools(terminal, &public_tools, event["type"].as_str().unwrap_or_default());
+        }
+    }
+
+    let terminal = events
+        .iter()
+        .find(|event| event["type"] == "response.completed")
+        .expect("completed snapshot");
+    common::assert_recorded_mixed_output_kinds(&terminal["response"], &capture, "terminal snapshot");
+    let id = terminal["response"]["id"].as_str().expect("response id");
+    let stored: serde_json::Value = client
+        .get(format!("{gateway_url}/v1/responses/{id}"))
+        .bearer_auth("test-key")
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    common::assert_public_mixed_tools(&stored, &public_tools, "stored response");
+
+    let requests = requests.lock().await;
+    assert_eq!(requests.len(), 1, "the replayed turn runs one inference round");
+    common::assert_lowered_mixed_upstream(&requests[0]);
 }

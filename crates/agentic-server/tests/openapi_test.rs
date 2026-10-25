@@ -29,6 +29,26 @@ async fn fetch_spec() -> serde_json::Value {
 }
 
 #[tokio::test]
+async fn prompt_cache_options_schema_exposes_the_closed_mode_ttl_contract() {
+    let spec = fetch_spec().await;
+    let schemas = &spec["components"]["schemas"];
+    assert_eq!(
+        schemas["PromptCacheMode"]["enum"],
+        serde_json::json!(["implicit", "explicit"])
+    );
+    assert_eq!(schemas["PromptCacheTtl"]["enum"], serde_json::json!(["30m"]));
+    let options = &schemas["PromptCacheOptions"];
+    assert_eq!(options["additionalProperties"], false);
+    let properties = options["properties"].as_object().unwrap();
+    assert_eq!(properties.len(), 2);
+    assert!(properties.contains_key("mode"));
+    assert!(properties.contains_key("ttl"));
+    for name in ["RequestPayload", "CompactRequest", "ResponsePayload"] {
+        assert!(!schemas[name]["properties"]["prompt_cache_options"].is_null());
+    }
+}
+
+#[tokio::test]
 async fn openapi_json_returns_valid_spec() {
     let body = fetch_spec().await;
 
@@ -45,6 +65,7 @@ async fn openapi_json_returns_valid_spec() {
         "/v1/models",
         "/v1/responses",
         "/v1/responses/compact",
+        "/v1/responses/{response_id}",
         "/v1/conversations",
         "/v1/messages",
         "/v1/messages/count_tokens",
@@ -89,6 +110,32 @@ async fn streaming_endpoints_declare_dual_media_types() {
             media_types.contains(&"text/event-stream"),
             "{path} 200 missing text/event-stream, got: {media_types:?}"
         );
+    }
+}
+
+#[tokio::test]
+async fn messages_tool_choice_schema_matches_the_typed_boundary() {
+    let spec = fetch_spec().await;
+    let schema = serde_json::json!({"components":spec["components"], "$ref":"#/components/schemas/MessagesToolChoice"});
+    let validator = jsonschema::validator_for(&schema).unwrap();
+    for choice in [
+        serde_json::json!({"type":"auto"}),
+        serde_json::json!({"type":"any", "name":"extension", "disable_parallel_tool_use":false}),
+        serde_json::json!({"type":"tool", "name":"client_echo", "disable_parallel_tool_use":true, "extension":[1,2]}),
+        serde_json::json!({"type":"none"}),
+    ] {
+        assert!(validator.is_valid(&choice), "{choice}");
+    }
+    for choice in [
+        serde_json::json!([]),
+        serde_json::json!(false),
+        serde_json::json!({"type":"future"}),
+        serde_json::json!({"type":"tool"}),
+        serde_json::json!({"type":"tool", "name":""}),
+        serde_json::json!({"type":"tool", "name":42}),
+        serde_json::json!({"type":"auto", "disable_parallel_tool_use":null}),
+    ] {
+        assert!(!validator.is_valid(&choice), "{choice}");
     }
 }
 
@@ -189,14 +236,26 @@ async fn tagged_enum_discriminators_present() {
                 .or_else(|| variant["allOf"][0]["properties"]["type"]["enum"][0].as_str())
         })
         .collect();
-    assert!(
-        type_values.contains(&"compaction_trigger"),
-        "InputItem missing 'compaction_trigger', got: {type_values:?}"
+    for expected in ["compaction_trigger", "message", "web_search_call", "mcp_call"] {
+        assert!(
+            type_values.contains(&expected),
+            "InputItem missing '{expected}', got: {type_values:?}"
+        );
+    }
+    assert!(schemas.get("ConversationItem").is_none());
+    assert_eq!(schemas["InOutItem"]["$ref"], "#/components/schemas/InputItem");
+    assert_eq!(
+        schemas["ResponsesInput"]["oneOf"][1]["items"]["$ref"],
+        "#/components/schemas/InOutItem"
     );
-    assert!(
-        type_values.contains(&"message"),
-        "InputItem missing 'message', got: {type_values:?}"
-    );
+    let output_types = schemas["OutputItem"]["oneOf"].as_array().unwrap();
+    for kind in ["web_search_call", "mcp_call"] {
+        assert!(
+            output_types
+                .iter()
+                .any(|variant| variant["allOf"][0]["properties"]["type"]["enum"][0] == kind)
+        );
+    }
 }
 
 #[tokio::test]
@@ -216,4 +275,53 @@ async fn swagger_ui_returns_html() {
         content_type.contains("text/html"),
         "swagger-ui should return HTML, got: {content_type}"
     );
+}
+
+#[tokio::test]
+async fn collaboration_input_schemas_allow_omitted_ids_without_weakening_output() {
+    let spec = fetch_spec().await;
+    let schemas = &spec["components"]["schemas"];
+    for name in ["MultiAgentCall", "MultiAgentCallOutput", "AgentMessage"] {
+        let has_required_id = |name: &str| {
+            schemas[name]["required"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|value| value == "id")
+        };
+        assert!(has_required_id(name), "{name} output requires id");
+        assert!(
+            !has_required_id(&format!("Input{name}")),
+            "{name} input allows omitted id"
+        );
+    }
+}
+
+#[tokio::test]
+async fn prompt_cache_retention_schema_matches_request_validation() {
+    let spec = fetch_spec().await;
+    let schemas = &spec["components"]["schemas"];
+    assert_eq!(
+        schemas["PromptCacheRetention"]["enum"],
+        serde_json::json!(["in_memory", "24h"])
+    );
+    for name in ["RequestPayload", "CompactRequest"] {
+        let property = &schemas[name]["properties"]["prompt_cache_retention"];
+        assert!(!property.is_null(), "{name} must expose retention");
+        let alternatives = property["oneOf"].as_array().expect("nullable retention alternatives");
+        assert!(alternatives.iter().any(|schema| schema["type"] == "null"));
+        assert!(
+            alternatives
+                .iter()
+                .any(|schema| schema["enum"] == serde_json::json!(["in_memory", "24h"])
+                    || schema["$ref"] == "#/components/schemas/PromptCacheRetention")
+        );
+        assert!(
+            !schemas[name]["required"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|field| field == "prompt_cache_retention")
+        );
+    }
 }

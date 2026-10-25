@@ -6,10 +6,52 @@ use crate::types::io::output::{FunctionToolCall, GatewayCallStatus, OutputItem};
 
 pub(crate) const MAX_GATEWAY_TOOL_OUTPUT_BYTES: usize = 1024 * 1024;
 
+/// Whether a handler's output is the tool's answer or a failure the tool
+/// reports to the model in its own documented shape.
+///
+/// Set by the handler that produced the output and carried unchanged through
+/// dispatch, so a loop never has to parse an output to learn its status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolOutputStatus {
+    /// The output is the tool's answer.
+    Success,
+    /// The output reports a failure the model should treat as an error, such
+    /// as a documented `web_fetch_tool_result_error`.
+    Failure,
+}
+
 #[derive(Debug, Clone)]
 pub struct ToolOutput {
     pub call_id: String,
     pub output: String,
+    pub status: ToolOutputStatus,
+}
+
+impl ToolOutput {
+    /// An output that is the tool's answer.
+    #[must_use]
+    pub fn success(call_id: impl Into<String>, output: impl Into<String>) -> Self {
+        Self {
+            call_id: call_id.into(),
+            output: output.into(),
+            status: ToolOutputStatus::Success,
+        }
+    }
+
+    /// An output that reports a failure in the tool's own documented shape.
+    #[must_use]
+    pub fn failure(call_id: impl Into<String>, output: impl Into<String>) -> Self {
+        Self {
+            call_id: call_id.into(),
+            output: output.into(),
+            status: ToolOutputStatus::Failure,
+        }
+    }
+
+    #[must_use]
+    pub const fn is_failure(&self) -> bool {
+        matches!(self.status, ToolOutputStatus::Failure)
+    }
 }
 
 /// Tool-owned public lifecycle projection for one scheduled gateway call.
@@ -49,6 +91,13 @@ pub enum ToolError {
     /// from the prior turn.
     #[error("No tool output found for function call {call_id}.")]
     MissingOutput { call_id: String },
+    /// A continuation request supplied an output for a call that does not exist in its history.
+    #[error("No tool call found for function call output with call_id {call_id}.")]
+    UnknownCallOutput { call_id: String },
+    /// A tool declaration carries a parameter its type does not accept, such as `async` on a
+    /// hosted tool. `param` is the request path, for example `tools[0].async`.
+    #[error("Unknown parameter: '{param}'.")]
+    UnknownParameter { param: String },
 }
 
 /// Trait implemented by every tool type — client-owned and gateway-owned alike.
@@ -77,8 +126,8 @@ pub trait ToolHandler: Send + Sync {
 /// Extension of [`ToolHandler`] for tool types that are executed by the gateway.
 ///
 /// Only executable gateway handlers implement this trait. MCP, web search, and
-/// file search implement it today. Code interpreter is gateway-owned in the
-/// registry but does not yet have an executor. Client-owned tools (`Function`,
+/// file search implement it unconditionally; the Eryx-backed code interpreter
+/// implements it when its Cargo feature is enabled. Client-owned tools (`Function`,
 /// `ToolSearch`, `Custom`, `CodexNamespace`) do not implement it, so they cannot
 /// be dispatched through this interface.
 ///
@@ -163,4 +212,17 @@ mod tests {
     // Compile-time check: a GatewayExecutor with fixed associated parameter
     // types remains dyn-compatible for typed executor slots.
     fn _assert_gateway_executor_dyn_compatible(_: Arc<dyn GatewayExecutor<ToolParams = (), ExecutionParams = ()>>) {}
+
+    #[test]
+    fn an_output_carries_the_status_its_constructor_set() {
+        let answer = ToolOutput::success("call_1", "42");
+        assert_eq!(answer.call_id, "call_1");
+        assert_eq!(answer.output, "42");
+        assert_eq!(answer.status, ToolOutputStatus::Success);
+        assert!(!answer.is_failure());
+
+        let refusal = ToolOutput::failure("call_2", r#"{"error":"refused"}"#);
+        assert_eq!(refusal.status, ToolOutputStatus::Failure);
+        assert!(refusal.is_failure());
+    }
 }

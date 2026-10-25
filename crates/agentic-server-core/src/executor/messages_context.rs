@@ -2,27 +2,30 @@
 //!
 //! The Messages loops are a pass-through, not a transform: the client's request
 //! is forwarded to vLLM `/v1/messages` essentially untouched, and only `tools`
-//! and `stream`/`messages` are read or rewritten. That rules out a typed
+//! and `stream`/`messages`/`tool_choice` are read or rewritten. That rules out a typed
 //! round-trip through [`MessagesRequest`] as the upstream body — `ContentBlock`
 //! carries a `#[serde(other)] Unknown` catch-all, and several block types model
 //! only the fields the gateway reads, so re-serializing would silently drop
 //! `cache_control`, `is_error`, and every unmodeled block (`image`,
 //! `redacted_thinking`, future provider extensions).
 //!
-//! So this context carries **two views of one request**, built once per request:
+//! This context retains the request data needed by the loop:
 //!
 //! * `raw` — the JSON body actually sent upstream. It
-//!   is the single source of truth for `messages` and `system`, and the only
-//!   thing the loops mutate.
+//!   is the source of truth for `messages` and `system`, preserving unmodeled
+//!   history blocks and extension fields.
 //! * `typed` — only the client's `tools`, `stream`, and `model`, retained for
 //!   safe field access in routing and the loops. The parsed message history,
 //!   system prompt, and other fields are dropped before the loop begins.
+//! * `tool_choice` — the current typed selector. Fulfillment and transitions
+//!   use exhaustive enum matches; each transition updates the raw selector.
 //!
 //! The two are **not** kept byte-identical, and must not be confused: `typed` is
 //! what the client sent, `raw` is what the gateway sends upstream. They diverge
 //! wherever the gateway rewrites the body for upstream — today
-//! `normalize_native_web_search` rewriting a native `web_search_20250305`
-//! declaration into the ordinary function-tool shape vLLM accepts. Accordingly,
+//! `normalize_native_server_tools` rewriting a native web-search or web-fetch
+//! declaration, of any supported version, into the ordinary function-tool shape
+//! vLLM accepts. Accordingly,
 //! only the fields the loops never mutate are exposed off `typed`
 //! ([`tools`](MessagesRequestContext::tools),
 //! [`stream`](MessagesRequestContext::stream),
@@ -34,8 +37,11 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
 use crate::executor::error::{ExecutorError, ExecutorResult};
-use crate::executor::messages_request::{WebSearchBudget, normalize_native_web_search};
-use crate::types::messages::{GatewayToolResult, MessagesRequest, ToolParam};
+use crate::executor::messages_request::{ServerToolBudgets, normalize_native_server_tools};
+use crate::types::messages::request::MessagesToolDeclarations;
+use crate::types::messages::{
+    GatewayToolMap, GatewayToolResult, MessagesRequest, MessagesToolChoice, ToolParam, has_gateway_tool,
+};
 use crate::utils::common::serialize_to_string;
 
 /// A Messages request parsed together with the exact immutable body bytes it
@@ -60,6 +66,22 @@ impl<'a> ParsedMessagesRequest<'a> {
     pub fn parse(body: &'a [u8]) -> ExecutorResult<Self> {
         let typed = serde_json::from_slice(body).map_err(ExecutorError::JsonError)?;
         Ok(Self { typed, body })
+    }
+
+    /// Parse requests handled by the gateway; preserve the transparent proxy
+    /// contract for requests without gateway-executed tools.
+    ///
+    /// # Errors
+    /// Returns the parse error if a gateway-tool request fails validation.
+    pub fn parse_for_gateway(body: &'a [u8], gateway_map: &GatewayToolMap) -> ExecutorResult<Option<Self>> {
+        match Self::parse(body) {
+            Ok(parsed) => Ok(has_gateway_tool(parsed.tools(), gateway_map).then_some(parsed)),
+            Err(error) => {
+                let declares_gateway_tool = serde_json::from_slice::<MessagesToolDeclarations>(body)
+                    .is_ok_and(|request| has_gateway_tool(request.tools.as_ref(), gateway_map));
+                if declares_gateway_tool { Err(error) } else { Ok(None) }
+            }
+        }
     }
 
     /// The tools declared by the client, before upstream normalization.
@@ -97,11 +119,47 @@ impl From<MessagesRequest> for MessagesTypedState {
 pub struct MessagesRequestContext {
     /// The only typed request fields needed after routing.
     typed: MessagesTypedState,
+    /// Current upstream selection policy; updated together with `raw`.
+    tool_choice: Option<MessagesToolChoice>,
     /// The upstream body. Mutated by the loops; the source of truth for
     /// `messages` and `system`.
     raw: Value,
-    /// Request-wide native web-search budget, derived while normalizing `raw`.
-    web_search_budget: WebSearchBudget,
+    /// Request-wide native server-tool budgets, derived while normalizing `raw`.
+    budgets: ServerToolBudgets,
+}
+
+/// Whether `text` mentions `url` as a whole URL rather than as the prefix of a
+/// longer one: the match must end where a URL ends — at the end of the text,
+/// before whitespace, a quote, or a bracket, or before sentence punctuation
+/// that is itself followed by one of those. A trailing slash is optional on
+/// either side, so a bare host matches its normalized form.
+fn mentions_url(text: &str, url: &str) -> bool {
+    let base = url.trim_end_matches('/');
+    if base.is_empty() {
+        return false;
+    }
+    text.match_indices(base)
+        .any(|(index, _)| url_ends_before(text[index + base.len()..].trim_start_matches('/')))
+}
+
+/// Whether a URL that stops right before `rest` is complete there.
+fn url_ends_before(rest: &str) -> bool {
+    let mut chars = rest.chars();
+    match chars.next() {
+        None => true,
+        Some(ch) if is_url_boundary(ch) => true,
+        Some('.' | ',' | ';' | ':' | '!' | '?') => chars.next().is_none_or(is_url_boundary),
+        Some(_) => false,
+    }
+}
+
+/// Characters that cannot continue a URL in prose or JSON.
+fn is_url_boundary(ch: char) -> bool {
+    ch.is_whitespace()
+        || matches!(
+            ch,
+            '"' | '\'' | '<' | '>' | '(' | ')' | '[' | ']' | '{' | '}' | '`' | '|' | '\\'
+        )
 }
 
 impl MessagesRequestContext {
@@ -112,14 +170,15 @@ impl MessagesRequestContext {
     /// from the typed view; the owned message history and system prompt are
     /// dropped before this function returns.
     ///
-    /// Native web-search declarations are validated and normalized here, before
-    /// a streaming handler commits its HTTP status — an invalid declaration must
-    /// surface as an error response, not as a mid-stream event.
+    /// Native web search and web fetch declarations are validated and
+    /// normalized here, before a streaming handler commits its HTTP status — an
+    /// invalid declaration must surface as an error response, not as a
+    /// mid-stream event.
     ///
     /// # Errors
     /// Returns [`ExecutorError::JsonError`] if `body` is not valid JSON, or
     /// [`ExecutorError::InvalidRequest`] if it carries an unsupported or invalid
-    /// native web-search declaration.
+    /// native web search or web fetch declaration.
     pub fn new(parsed: ParsedMessagesRequest<'_>) -> ExecutorResult<Self> {
         let raw = serde_json::from_slice(parsed.body).map_err(ExecutorError::JsonError)?;
         Self::from_parts(parsed.typed, raw)
@@ -134,19 +193,20 @@ impl MessagesRequestContext {
     /// # Errors
     /// Returns [`ExecutorError::JsonError`] if `raw` is not a well-formed
     /// Messages request, or [`ExecutorError::InvalidRequest`] if it carries an
-    /// unsupported or invalid native web-search declaration.
+    /// unsupported or invalid native web search or web fetch declaration.
     pub fn from_value(raw: Value) -> ExecutorResult<Self> {
         // Deserializing from the parsed tree avoids re-lexing the body text.
         let typed = MessagesRequest::deserialize(&raw).map_err(ExecutorError::JsonError)?;
         Self::from_parts(typed, raw)
     }
 
-    fn from_parts(typed: MessagesRequest, mut raw: Value) -> ExecutorResult<Self> {
-        let web_search_budget = normalize_native_web_search(&mut raw)?;
+    fn from_parts(mut typed: MessagesRequest, mut raw: Value) -> ExecutorResult<Self> {
+        let budgets = normalize_native_server_tools(&mut raw)?;
         Ok(Self {
+            tool_choice: typed.tool_choice.take(),
             typed: typed.into(),
             raw,
-            web_search_budget,
+            budgets,
         })
     }
 
@@ -189,15 +249,78 @@ impl MessagesRequestContext {
         self.raw["stream"] = Value::Bool(streaming);
     }
 
-    /// Reserve up to `requested` native web searches, returning how many may run.
-    pub(super) fn reserve_searches(&mut self, requested: usize) -> usize {
-        self.web_search_budget.reserve(requested)
+    /// Admit one gateway call that would perform `searches` native web
+    /// searches. `max_uses` limits searches, so a batched call is charged for
+    /// every query and is refused whole when the budget cannot cover it.
+    pub(super) fn admit_searches(&mut self, searches: usize) -> bool {
+        self.budgets.searches.admit(searches)
+    }
+
+    /// Admit one gateway call that would perform `fetches` native web fetches
+    /// against the request-wide `web_fetch` `max_uses` budget.
+    pub(super) fn admit_fetches(&mut self, fetches: usize) -> bool {
+        self.budgets.fetches.admit(fetches)
+    }
+
+    /// Whether `url` appeared earlier in the conversation where a web fetch
+    /// may take it from: a user message, or a `tool_result` the client or the
+    /// gateway supplied (including hidden `web_search` and `web_fetch`
+    /// rounds). Assistant text and the system prompt are excluded, as
+    /// Anthropic documents, so the model cannot fetch a URL it produced
+    /// itself; the URL must appear whole ([`mentions_url`]).
+    pub(super) fn url_in_prior_context(&self, url: &str) -> bool {
+        let mentions = |text: &str| mentions_url(text, url);
+        let block_mentions = |block: &Value| match block.get("type").and_then(Value::as_str) {
+            Some("text") => block.get("text").and_then(Value::as_str).is_some_and(mentions),
+            Some("tool_result") => match block.get("content") {
+                Some(Value::String(text)) => mentions(text),
+                Some(Value::Array(blocks)) => blocks
+                    .iter()
+                    .filter(|inner| inner.get("type").and_then(Value::as_str) == Some("text"))
+                    .any(|inner| inner.get("text").and_then(Value::as_str).is_some_and(mentions)),
+                _ => false,
+            },
+            _ => false,
+        };
+        self.raw
+            .get("messages")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter(|message| message.get("role").and_then(Value::as_str) == Some("user"))
+            .any(|message| match message.get("content") {
+                Some(Value::String(text)) => mentions(text),
+                Some(Value::Array(blocks)) => blocks.iter().any(block_mentions),
+                _ => false,
+            })
+    }
+
+    /// Whether a finished round permits executing its gateway calls.
+    /// vLLM maps named Chat Completions calls to Messages `end_turn`; accept
+    /// that terminal only when the explicitly selected tool actually appears.
+    /// Other stops (including truncation) retain their normal terminal behavior.
+    pub(super) fn is_tool_call_stop<'a>(
+        &self,
+        stop_reason: Option<&str>,
+        mut gateway_names: impl Iterator<Item = &'a str>,
+    ) -> bool {
+        if stop_reason == Some("tool_use") {
+            return true;
+        }
+        stop_reason == Some("end_turn")
+            && match self.tool_choice.as_ref() {
+                Some(MessagesToolChoice::Tool { name, .. }) => gateway_names.any(|called| called == name.as_str()),
+                Some(MessagesToolChoice::Auto(_) | MessagesToolChoice::Any(_) | MessagesToolChoice::None { .. })
+                | None => false,
+            }
     }
 
     /// Append the model's assistant turn (preserving its `thinking`/`text`/
     /// `tool_use` blocks in order — F3) and a following user turn of
     /// `tool_result`s, so the next upstream round sees the full conversation
     /// state. These stay internal — the client never sees them (hide-the-call).
+    /// A fulfilled forced `tool_choice` becomes `auto` for subsequent rounds;
+    /// parallel-use settings and extension fields remain unchanged.
     ///
     /// # Errors
     /// Returns [`ExecutorError::InvalidRequest`] if the body has no `messages`
@@ -210,6 +333,21 @@ impl MessagesRequestContext {
         assistant_content: &[Value],
         tool_results: Vec<GatewayToolResult>,
     ) -> ExecutorResult<()> {
+        // A forced choice applies to this public turn. Once its gateway call
+        // has a result, let the next inference round use that result to answer
+        // instead of forcing another call until the round limit is reached.
+        let fulfilled_choice = match self.tool_choice.as_ref() {
+            Some(MessagesToolChoice::Any(_)) => !tool_results.is_empty(),
+            Some(MessagesToolChoice::Tool { name, .. }) => assistant_content.iter().any(|block| {
+                block["type"] == "tool_use"
+                    && block["name"] == name.as_str()
+                    && block
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .is_some_and(|id| tool_results.iter().any(|result| result.tool_use_id == id))
+            }),
+            Some(MessagesToolChoice::Auto(_) | MessagesToolChoice::None { .. }) | None => false,
+        };
         let messages = self
             .raw
             .get_mut("messages")
@@ -225,6 +363,15 @@ impl MessagesRequestContext {
             serde_json::to_value(tool_results).map_err(ExecutorError::JsonError)?,
         );
         messages.push(Value::Object(user));
+        if fulfilled_choice && let Some(choice) = &mut self.tool_choice {
+            match choice {
+                MessagesToolChoice::Any(options) | MessagesToolChoice::Tool { options, .. } => {
+                    *choice = MessagesToolChoice::Auto(std::mem::take(options));
+                }
+                MessagesToolChoice::Auto(_) | MessagesToolChoice::None { .. } => {}
+            }
+            self.raw["tool_choice"] = serde_json::to_value(choice).map_err(ExecutorError::JsonError)?;
+        }
         Ok(())
     }
 }
@@ -242,6 +389,37 @@ mod tests {
     }
 
     #[test]
+    fn end_turn_requires_the_explicitly_selected_gateway_call() {
+        for (choice, accepts_end_turn) in [
+            (Value::Null, false),
+            (json!({"type":"auto", "name":"web_search"}), false),
+            (json!({"type":"any", "name":"web_search"}), false),
+            (json!({"type":"none"}), false),
+            (json!({"type":"tool", "name":"client_echo"}), false),
+            (json!({"type":"tool", "name":"web_search"}), true),
+        ] {
+            let mut body = request();
+            body["tool_choice"] = choice.clone();
+            let ctx = MessagesRequestContext::from_value(body).unwrap();
+            assert!(ctx.is_tool_call_stop(Some("tool_use"), ["web_search"].into_iter()));
+            assert_eq!(
+                ctx.is_tool_call_stop(Some("end_turn"), ["web_search"].into_iter()),
+                accepts_end_turn,
+            );
+            assert!(!ctx.is_tool_call_stop(Some("end_turn"), std::iter::empty()));
+            for reason in [
+                None,
+                Some("max_tokens"),
+                Some("stop_sequence"),
+                Some("pause_turn"),
+                Some("future"),
+            ] {
+                assert!(!ctx.is_tool_call_stop(reason, ["web_search"].into_iter()));
+            }
+        }
+    }
+
+    #[test]
     fn typed_view_reads_client_fields_and_raw_carries_upstream_normalization() {
         let ctx = MessagesRequestContext::from_value(request()).unwrap();
 
@@ -250,8 +428,8 @@ mod tests {
         // The typed view keeps the client's native declaration, which is what
         // the tool seam classifies on...
         let tools = ctx.tools().expect("tools");
-        assert_eq!(tools[0].name, "web_search");
-        assert_eq!(tools[0].type_.as_deref(), Some("web_search_20250305"));
+        assert_eq!(tools[0].name(), "web_search");
+        assert_eq!(tools[0].tool_type(), Some("web_search_20250305"));
         // ...while the raw body carries the function-tool shape vLLM accepts.
         assert_eq!(ctx.raw["tools"][0]["name"], "web_search");
         assert!(ctx.raw["tools"][0].get("type").is_none());
@@ -290,9 +468,128 @@ mod tests {
     #[test]
     fn budget_is_shared_across_rounds() {
         let mut ctx = MessagesRequestContext::from_value(request()).unwrap();
-        assert_eq!(ctx.reserve_searches(1), 1);
-        assert_eq!(ctx.reserve_searches(3), 1, "max_uses caps the request-wide total");
-        assert_eq!(ctx.reserve_searches(1), 0);
+        assert!(ctx.admit_searches(1));
+        assert!(
+            !ctx.admit_searches(3),
+            "a batch the budget cannot cover is refused whole"
+        );
+        assert!(
+            ctx.admit_searches(1),
+            "a refused call leaves the budget for one that fits"
+        );
+        assert!(!ctx.admit_searches(1), "max_uses caps the request-wide total");
+        assert!(ctx.admit_searches(0), "a call that performs no search is never charged");
+    }
+
+    #[test]
+    fn requests_without_max_uses_are_not_limited() {
+        let mut body = request();
+        body["tools"][0].as_object_mut().unwrap().remove("max_uses");
+        let mut ctx = MessagesRequestContext::from_value(body).unwrap();
+        for searches in [5, 5, 5] {
+            assert!(ctx.admit_searches(searches));
+        }
+    }
+
+    #[test]
+    fn fetch_budget_is_separate_and_charged_per_fetch() {
+        let mut body = request();
+        body["tools"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"type": "web_fetch_20250910", "name": "web_fetch", "max_uses": 1}));
+        let mut ctx = MessagesRequestContext::from_value(body).unwrap();
+        assert!(ctx.admit_fetches(1));
+        assert!(!ctx.admit_fetches(1), "max_uses caps fetches");
+        assert!(ctx.admit_fetches(0), "arguments without a url are never charged");
+        assert!(ctx.admit_searches(2), "the search budget is untouched");
+    }
+
+    #[test]
+    fn url_in_prior_context_reads_user_messages_and_tool_results_only() {
+        let body = json!({
+            "model": "m", "max_tokens": 8,
+            "system": "see https://system.example/only",
+            "messages": [
+                {"role": "user", "content": "read https://user.example/page please"},
+                {"role": "assistant", "content": [{"type": "text", "text": "I found https://assistant.example/made-up"}]},
+                {"role": "user", "content": [
+                    {"type": "text", "text": "and https://block.example/"},
+                    {"type": "tool_result", "tool_use_id": "t1", "content": "result mentions https://result.example/a"},
+                    {"type": "tool_result", "tool_use_id": "t2", "content": [{"type": "text", "text": "https://nested.example/b"}]}
+                ]}
+            ]
+        });
+        let mut ctx = MessagesRequestContext::from_value(body).unwrap();
+        for seen in [
+            "https://user.example/page",
+            "https://block.example/",
+            "https://block.example",
+            "https://result.example/a",
+            "https://nested.example/b",
+        ] {
+            assert!(ctx.url_in_prior_context(seen), "{seen}");
+        }
+        for unseen in [
+            "https://assistant.example/made-up",
+            "https://system.example/only",
+            "https://user.example/other",
+        ] {
+            assert!(!ctx.url_in_prior_context(unseen), "{unseen}");
+        }
+
+        // A hidden gateway round's results are user-role tool_results and count.
+        ctx.append_round(
+            &[json!({"type": "tool_use", "id": "s1", "name": "web_search", "input": {"query": "q"}})],
+            vec![GatewayToolResult::new(
+                "s1",
+                r#"{"results":{"web":[{"url":"https://search.example/hit"}]}}"#.to_owned(),
+                false,
+            )],
+        )
+        .unwrap();
+        assert!(ctx.url_in_prior_context("https://search.example/hit"));
+        // The model's own tool_use input never counts.
+        ctx.append_round(
+            &[json!({"type": "tool_use", "id": "f1", "name": "web_fetch", "input": {"url": "https://model.example/own"}})],
+            vec![GatewayToolResult::new("f1", "refused".to_owned(), true)],
+        )
+        .unwrap();
+        assert!(!ctx.url_in_prior_context("https://model.example/own"));
+    }
+
+    #[test]
+    fn url_in_prior_context_matches_whole_urls_only() {
+        let body = json!({
+            "model": "m", "max_tokens": 8,
+            "messages": [{"role": "user", "content": [
+                {"type": "text", "text": "Read https://a.example/docs/page. Then (https://b.example/x?q=1)."},
+                {"type": "text", "text": "Also \"https://c.example\" and [https://e.example/y]"},
+                {"type": "tool_result", "tool_use_id": "t1", "content": "{\"url\":\"https://d.example/hit\"}"}
+            ]}]
+        });
+        let ctx = MessagesRequestContext::from_value(body).unwrap();
+        for seen in [
+            "https://a.example/docs/page",
+            "https://a.example/docs/page/",
+            "https://b.example/x?q=1",
+            "https://c.example",
+            "https://c.example/",
+            "https://d.example/hit",
+            "https://e.example/y",
+        ] {
+            assert!(ctx.url_in_prior_context(seen), "{seen}");
+        }
+        for unseen in [
+            "https://a.example/docs",
+            "https://a.example/docs/pag",
+            "https://a.example/docs/page/sub",
+            "https://b.example/x",
+            "https://c.exam",
+            "https://d.example/hit/more",
+        ] {
+            assert!(!ctx.url_in_prior_context(unseen), "{unseen}");
+        }
     }
 
     #[test]
@@ -332,5 +629,110 @@ mod tests {
     fn parsed_request_rejects_non_messages_json() {
         let error = ParsedMessagesRequest::parse(br"[]").unwrap_err();
         assert!(matches!(error, ExecutorError::JsonError(_)), "{error:?}");
+    }
+
+    #[test]
+    fn malformed_gateway_selectors_fail_routing_including_configured_aliases() {
+        let map = GatewayToolMap::from_pairs([("WebSearch", "web_search")]);
+        for name in ["web_search", "WebSearch", "client_echo"] {
+            let body = serde_json::to_vec(&json!({
+                "model":"test", "max_tokens":64, "messages":[],
+                "tools":[{"name":name, "input_schema":{"type":"object"}}],
+                "tool_choice":{"type":"tool"}
+            }))
+            .unwrap();
+            let parsed = ParsedMessagesRequest::parse_for_gateway(&body, &map);
+            if name == "client_echo" {
+                assert!(parsed.unwrap().is_none(), "proxy requests retain upstream validation");
+            } else {
+                assert!(parsed.is_err(), "gateway requests must not fall back to the proxy");
+            }
+        }
+    }
+
+    fn completed_search() -> (Vec<Value>, Vec<GatewayToolResult>) {
+        (
+            vec![json!({"type":"tool_use", "id":"search_1", "name":"web_search", "input":{}})],
+            vec![GatewayToolResult::new("search_1", "answer".to_owned(), false)],
+        )
+    }
+
+    #[test]
+    fn fulfilled_forced_choice_allows_an_answer_and_preserves_other_settings() {
+        for kind in ["any", "tool"] {
+            for is_error in [false, true] {
+                let mut body = request();
+                let choice = json!({"type":kind, "name":"web_search", "disable_parallel_tool_use":true, "extension":{"value":1}});
+                body["tool_choice"] = choice.clone();
+                let mut ctx = MessagesRequestContext::from_value(body).unwrap();
+                let initial = ctx.raw.clone();
+                assert_eq!(initial["tool_choice"], choice);
+                let (content, mut results) = completed_search();
+                results[0].is_error = is_error;
+                ctx.append_round(&content, results).unwrap();
+                let mut expected = initial;
+                expected["tool_choice"]["type"] = json!("auto");
+                if kind == "tool" {
+                    expected["tool_choice"].as_object_mut().unwrap().remove("name");
+                }
+                expected["messages"].as_array_mut().unwrap().extend([
+                    json!({"role":"assistant", "content":content}),
+                    json!({"role":"user", "content":[{"type":"tool_result", "tool_use_id":"search_1", "content":"answer", "is_error":is_error}]}),
+                ]);
+                assert_eq!(ctx.raw, expected);
+                let (content, results) = completed_search();
+                ctx.append_round(&content, results).unwrap();
+                assert_eq!(ctx.raw["tool_choice"], expected["tool_choice"]);
+                assert!(matches!(ctx.tool_choice, Some(MessagesToolChoice::Auto(_))));
+                assert!(!ctx.is_tool_call_stop(Some("end_turn"), ["web_search"].into_iter()));
+            }
+        }
+    }
+
+    #[test]
+    fn unforced_or_unfulfilled_choices_are_preserved() {
+        for choice in [
+            None,
+            Some(Value::Null),
+            Some(json!({"type":"auto", "disable_parallel_tool_use":false})),
+            Some(json!({"type":"none"})),
+            Some(json!({"type":"tool", "name":"client_tool"})),
+        ] {
+            let mut body = request();
+            if let Some(choice) = &choice {
+                body["tool_choice"] = choice.clone();
+            }
+            let mut ctx = MessagesRequestContext::from_value(body).unwrap();
+            let (content, results) = completed_search();
+            ctx.append_round(&content, results).unwrap();
+            assert_eq!(ctx.raw.get("tool_choice"), choice.as_ref());
+        }
+    }
+
+    #[test]
+    fn forced_choice_is_not_fulfilled_without_its_call_result() {
+        for kind in ["any", "tool"] {
+            let mut body = request();
+            body["tool_choice"] = json!({"type":kind});
+            if kind == "tool" {
+                body["tool_choice"]["name"] = json!("web_search");
+            }
+            let mut ctx = MessagesRequestContext::from_value(body.clone()).unwrap();
+            let (content, _) = completed_search();
+            ctx.append_round(&content, vec![]).unwrap();
+            assert_eq!(ctx.raw["tool_choice"], body["tool_choice"]);
+        }
+        for content in [
+            vec![],
+            vec![json!({"type":"tool_use", "id":"unresolved", "name":"web_search"})],
+            vec![json!({"type":"text", "id":"search_1", "name":"web_search"})],
+        ] {
+            let mut body = request();
+            body["tool_choice"] = json!({"type":"tool", "name":"web_search"});
+            let mut ctx = MessagesRequestContext::from_value(body.clone()).unwrap();
+            let (_, results) = completed_search();
+            ctx.append_round(&content, results).unwrap();
+            assert_eq!(ctx.raw["tool_choice"], body["tool_choice"]);
+        }
     }
 }

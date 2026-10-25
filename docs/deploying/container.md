@@ -5,7 +5,7 @@ The production image contains only the Rust gateway and its runtime libraries. I
 ## Install from crates.io instead
 
 Since 0.4.0 the gateway is also published to crates.io, so a container is not required on a host with a Rust
-toolchain (MSRV 1.85):
+toolchain (MSRV 1.98.1):
 
 ```console
 cargo install agentic-server --version 0.4.0 --locked
@@ -50,6 +50,7 @@ The image starts `agentic-server` in standalone mode. At minimum, set `LLM_API_B
 | `DATABASE_URL` | `$AGENTIC_API_HOME/agentic_api.db` | SQLite or PostgreSQL persistence URL |
 | `AGENTIC_API_HOME` | `/var/lib/agentic-api` | User configuration and default local-state directory |
 | `AGENTIC_FILES_STORAGE_DIR` | `$AGENTIC_API_HOME/files` | Local file bytes; mount persistent writable storage when using the Files API |
+| `AGENTIC_MAX_REQUEST_BODY_SIZE_BYTES` | `10485760` | Maximum serialized request size for HTTP bodies and WebSocket messages; must be greater than zero |
 | `POSTGRES_MAX_CONNECTIONS` | `10` | Maximum PostgreSQL connections per gateway replica |
 | `POSTGRES_ACQUIRE_TIMEOUT_SECONDS` | `30` | Maximum wait for a PostgreSQL pool connection |
 | `POSTGRES_LOCK_TIMEOUT_SECONDS` | `5` | Maximum wait for a PostgreSQL row or table lock |
@@ -109,6 +110,22 @@ DATABASE_URL='postgresql://agentic-api:password@postgres.example.com/agentic_api
 
 `sslmode=require` encrypts the connection but does not verify the server hostname. Mount private CA certificates and client keys from runtime secrets; do not copy them into the image.
 
+`AGENTIC_MAX_REQUEST_BODY_SIZE_BYTES` bounds the encoded request the gateway will read — JSON overhead, replayed
+conversation history, and base64 image attachments included. It is unrelated to the upstream model's token context
+limit, so raising it does not raise what the inference server will accept. Because inline base64 attachments cost
+roughly a third more than the source image, deployments that replay image-bearing conversations may need more than the
+10 MiB default. Requests above the limit receive `413 Payload Too Large`; oversized WebSocket messages and frames are
+rejected by the transport, which closes the connection. The `--max-request-body-size-bytes` argument takes precedence
+over this variable, which in turn overrides `server.max_request_body_size_bytes` in the configuration file.
+
+`AGENTIC_RATE_LIMIT_REQUESTS_PER_MINUTE` turns on a per-caller request rate limit, and `AGENTIC_RATE_LIMIT_BURST`
+(default: the per-minute rate) sets how many requests a caller may send at once. Both are off by default. The limit is
+kept in each container's memory, so with N replicas a caller can send up to N times the rate. Without OIDC, callers
+are told apart by the peer address the container sees, so behind a proxy or load balancer that does not preserve
+client addresses all callers share one bucket. The `--rate-limit-requests-per-minute` and `--rate-limit-burst`
+arguments take precedence over these variables, which in turn override `server.rate_limit_requests_per_minute` and
+`server.rate_limit_burst`. See [Rate limits](../api/index.md#rate-limits).
+
 Size the pool across the whole deployment, not one process. Keep `replicas * POSTGRES_MAX_CONNECTIONS` below the managed database connection limit, with capacity reserved for migrations, administration, and failover. The acquire timeout bounds how long a request waits when the pool is exhausted. Lock and statement timeouts prevent a stalled transaction, slow query, or hot conversation from holding a connection indefinitely. Idle and lifetime recycling protect against stale connections and can be disabled with `0` only when the provider recommends it.
 
 Connect directly to PostgreSQL or use a session-pooling proxy. Transaction-pooling proxies are unsupported because the
@@ -137,7 +154,7 @@ Drain replicas running an older release before enabling writes through this rele
 
 Stored requests now fail if their response or conversation state cannot be persisted. For streaming requests, the gateway sends an error event instead of `response.completed`. Most client responses use the generic message `failed to persist response`; the underlying database error is written only to gateway logs. The exception is an optimistic conversation conflict, which returns status `400`, type `invalid_request_error`, code `conversation_locked`, and param `conversation`. No part of the stale turn is persisted, so the client can retry the request against the conversation's latest state. This prevents clients from receiving a response ID that cannot be continued after a lock timeout or other database failure without exposing database schema or constraint details.
 
-The file search migration (`0005_file_search.sql`) adds four tables for files,
+The file search migration (`0008_file_search.sql`) adds four tables for files,
 vector stores, attachments, and chunks. Supervisor-managed deployments must apply
 this migration and grant the runtime role `SELECT`, `INSERT`, `UPDATE`, and `DELETE`
 on the new tables before starting the upgraded gateway. File metadata and
@@ -148,14 +165,17 @@ serving the same files must share that directory. See [file search](../api/file-
 
 `AGENTIC_API_SCHEMA_READY` keeps schema changes under supervisor control. Startup performs a read-only compatibility
 check and fails if required persistence columns, types, nullability, primary/foreign-key constraints, or the conversation
-sequence index are missing, or if the four integer columns still need widening. Apply this upgrade in one transaction
+sequence index are missing, or if persistence integer columns still need widening. The Conversations API also requires
+the `revision` column from migration `0005_conversation_revision.sql`. Apply this upgrade in one transaction
 with a DDL-capable migration role before starting the DML-only gateway role. When using `psql`, pass
 `-v ON_ERROR_STOP=1` so any statement failure stops the script:
 
 ```sql
 BEGIN;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS revision BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE conversations
-    ALTER COLUMN created_at TYPE BIGINT USING created_at::BIGINT;
+    ALTER COLUMN created_at TYPE BIGINT USING created_at::BIGINT,
+    ALTER COLUMN revision TYPE BIGINT USING revision::BIGINT;
 ALTER TABLE items
     ALTER COLUMN created_at TYPE BIGINT USING created_at::BIGINT,
     ALTER COLUMN seq TYPE BIGINT USING seq::BIGINT;

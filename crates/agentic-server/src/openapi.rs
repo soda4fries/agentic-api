@@ -1,6 +1,7 @@
 // Feature-gated OpenAPI spec assembly and Swagger UI router.
 #![cfg(feature = "openapi")]
 
+use agentic_core::types::io::InOutItem;
 use utoipa::OpenApi;
 
 #[derive(OpenApi)]
@@ -25,12 +26,26 @@ use utoipa::OpenApi;
         crate::handler::http::file_search::get_vector_store_file,
         crate::handler::http::file_search::detach_file,
         crate::handler::http::file_search::search,
+        crate::handler::http::audio::transcriptions,
+        crate::handler::http::audio::translations,
+        crate::handler::http::chat_completions::chat_completions,
+        crate::handler::http::chat_completions::completions,
+        crate::handler::http::embeddings::embeddings,
         crate::handler::http::models::health,
         crate::handler::http::models::ready,
         crate::handler::http::models::models,
+        crate::handler::http::models::retrieve_model,
         crate::handler::http::responses::responses,
+        crate::handler::http::responses::retrieve_response,
         crate::handler::http::responses::compact_response,
-        crate::handler::http::conversations::conversations,
+        crate::handler::http::conversations::create_conversation,
+        crate::handler::http::conversations::retrieve_conversation,
+        crate::handler::http::conversations::update_conversation,
+        crate::handler::http::conversations::delete_conversation,
+        crate::handler::http::conversation_items::create_item,
+        crate::handler::http::conversation_items::list_items,
+        crate::handler::http::conversation_items::retrieve_item,
+        crate::handler::http::conversation_items::delete_item,
         crate::handler::http::messages::messages,
         crate::handler::http::messages::count_tokens,
     ),
@@ -39,6 +54,9 @@ use utoipa::OpenApi;
         agentic_core::types::io::FileSearchCall,
         agentic_core::types::io::FileSearchCallResult,
         agentic_core::types::io::FileCitation,
+        agentic_core::types::request_response::PromptCacheOptions,
+        agentic_core::types::request_response::PromptCacheMode,
+        agentic_core::types::request_response::PromptCacheTtl,
         agentic_core::types::request_response::RequestPayload,
         agentic_core::types::request_response::ResponsePayload,
         agentic_core::types::request_response::CompactRequest,
@@ -55,6 +73,7 @@ use utoipa::OpenApi;
         agentic_core::types::io::InputTextContent,
         agentic_core::types::io::InputImageContent,
         agentic_core::types::io::InputFileContent,
+        agentic_core::types::io::RefusalContent,
         agentic_core::types::io::InputContent,
         agentic_core::types::io::InputFunctionToolCall,
         agentic_core::types::io::FunctionToolResultMessage,
@@ -65,6 +84,21 @@ use utoipa::OpenApi;
         agentic_core::types::io::CompactionItem,
         agentic_core::types::io::CustomToolCallOutputMessage,
         agentic_core::types::io::OutputItem,
+        agentic_core::types::io::MultiAgentConfig,
+        agentic_core::types::io::AgentAttribution,
+        agentic_core::types::io::MultiAgentAction,
+        agentic_core::types::io::MultiAgentCall,
+        agentic_core::types::io::InputMultiAgentCall,
+        agentic_core::types::io::MultiAgentCallOutput,
+        agentic_core::types::io::InputMultiAgentCallOutput,
+        agentic_core::types::io::MultiAgentCallOutputContent,
+        agentic_core::types::io::AgentMessage,
+        agentic_core::types::io::InputAgentMessage,
+        agentic_core::types::io::AgentMessageContent,
+        agentic_core::types::io::MessagePhase,
+        agentic_core::types::io::OutputMessageContent,
+        agentic_core::types::io::OutputTextLogprob,
+        agentic_core::types::io::TopLogprob,
         agentic_core::types::io::OutputTextContent,
         agentic_core::types::io::OutputMessage,
         agentic_core::types::io::FunctionToolCall,
@@ -72,6 +106,7 @@ use utoipa::OpenApi;
         agentic_core::types::io::CustomToolCall,
         agentic_core::types::io::ShellCall,
         agentic_core::types::io::ShellCallAction,
+        agentic_core::types::io::ShellCallLimit,
         agentic_core::types::io::ShellCallStatus,
         agentic_core::types::io::ShellCallOutputMessage,
         agentic_core::types::io::ShellCallOutputContent,
@@ -98,6 +133,10 @@ use utoipa::OpenApi;
         agentic_core::types::io::AllowedTool,
         agentic_core::types::io::AllowedToolsMode,
         agentic_core::types::io::GatewayCallStatus,
+        agentic_core::types::io::CodeInterpreterCall,
+        agentic_core::types::io::CodeInterpreterCallOutput,
+        agentic_core::types::io::CodeInterpreterCallStatus,
+        agentic_core::types::io::CodeInterpreterCallStreamEvent,
         agentic_core::types::io::McpCallStatus,
         agentic_core::types::event::ResponseStatus,
         agentic_core::types::event::MessageStatus,
@@ -110,10 +149,12 @@ use utoipa::OpenApi;
         agentic_core::types::tools::McpToolParam,
         agentic_core::types::tools::WebSearchToolParam,
         agentic_core::types::tools::WebSearchContextSize,
-        agentic_core::types::tools::WebSearchFilters,
+        agentic_core::types::tools::DomainFilters,
         agentic_core::types::tools::WebSearchUserLocation,
         agentic_core::types::tools::FileSearchToolParam,
         agentic_core::types::tools::CodeInterpreterToolParam,
+        agentic_core::types::tools::params::CodeInterpreterAutoContainer,
+        agentic_core::types::tools::params::CodeInterpreterAutoContainerType,
         agentic_core::types::tools::ShellToolParam,
         agentic_core::types::tools::ShellEnvironment,
         agentic_core::types::tools::LocalShellEnvironment,
@@ -144,8 +185,15 @@ use utoipa::OpenApi;
         CodexModelsResponse,
         CodexModelObject,
         ModelsListResponse,
-        CreateConversationRequest,
-        ConversationResponse,
+        agentic_core::types::conversations::CreateConversationRequest,
+        agentic_core::types::conversations::ConversationResponse,
+        agentic_core::types::conversations::UpdateConversationRequest,
+        agentic_core::types::conversations::DeletedResponse,
+        agentic_core::types::conversations::CreateItemRequest,
+        agentic_core::types::conversations::ItemResponse,
+        agentic_core::types::conversations::ListItemsResponse,
+        InOutItem,
+        agentic_core::types::conversations::ItemOrder,
     )),
     modifiers(&SecurityAddon),
     tags(
@@ -251,6 +299,20 @@ pub struct ModelObject {
     pub owned_by: Option<String>,
 }
 
+/// Multipart form for the audio routes, forwarded to the upstream unchanged.
+///
+/// Only the common fields are listed; every other form field passes through as sent.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct AudioUploadForm {
+    /// The audio file.
+    #[schema(value_type = String, format = Binary)]
+    pub file: Vec<u8>,
+    /// Model ID served by the upstream.
+    pub model: String,
+    /// When `true`, the result is streamed as server-sent events.
+    pub stream: Option<bool>,
+}
+
 /// Codex-compatible model list returned when `client_version` is present.
 #[derive(serde::Serialize, utoipa::ToSchema)]
 pub struct CodexModelsResponse {
@@ -272,27 +334,6 @@ pub enum ModelsListResponse {
     Codex(CodexModelsResponse),
 }
 
-/// Request body for POST /v1/conversations.
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-pub struct CreateConversationRequest {
-    #[serde(default = "default_true")]
-    #[schema(default = true)]
-    pub store: bool,
-}
-
-fn default_true() -> bool {
-    true
-}
-
-/// Response from POST /v1/conversations.
-#[derive(serde::Serialize, utoipa::ToSchema)]
-pub struct ConversationResponse {
-    pub id: String,
-    pub created_at: i64,
-    pub object: String,
-    pub metadata: serde_json::Value,
-}
-
 pub fn swagger_ui_router<S>() -> axum::Router<S>
 where
     S: Clone + Send + Sync + 'static,
@@ -309,6 +350,50 @@ mod tests {
     use utoipa::OpenApi;
 
     #[test]
+    fn history_schema_matches_strict_input_deserialization() {
+        let mut schema = serde_json::to_value(ApiDoc::openapi()).unwrap();
+        schema["$ref"] = "#/components/schemas/InOutItem".into();
+        let validator = jsonschema::validator_for(&schema).unwrap();
+        for (wire, valid) in [
+            (serde_json::json!({"type":"function_call", "name":"weather"}), false),
+            (
+                serde_json::json!({"type":"function_call", "call_id":"call_1", "name":"weather"}),
+                false,
+            ),
+            (serde_json::json!({"type":"function_call_output"}), false),
+            (
+                serde_json::json!({"type":"message", "id":"msg_1", "role":"assistant", "status":"completed"}),
+                false,
+            ),
+            (
+                serde_json::json!({"type":"future_item", "role":"user", "content":"not a message"}),
+                false,
+            ),
+            (serde_json::json!({"type":"web_search_call", "id":"ws_1"}), false),
+            (serde_json::json!({"type":"mcp_call", "id":"mcp_1"}), false),
+            (
+                serde_json::json!({"type":"function_call", "call_id":"call_1", "name":"weather", "arguments":"{}"}),
+                true,
+            ),
+            (
+                serde_json::json!({"type":"web_search_call", "id":"ws_1", "status":"completed", "action":{"type":"search", "query":"weather"}}),
+                true,
+            ),
+            (
+                serde_json::json!({"type":"mcp_call", "id":"mcp_1", "server_label":"weather", "name":"forecast", "arguments":"{}", "output":"sunny"}),
+                true,
+            ),
+        ] {
+            assert_eq!(validator.is_valid(&wire), valid, "schema: {wire}");
+            assert_eq!(
+                serde_json::from_value::<InOutItem>(wire.clone()).is_ok(),
+                valid,
+                "decoder: {wire}"
+            );
+        }
+    }
+
+    #[test]
     fn spec_contains_expected_paths() {
         let spec = ApiDoc::openapi();
         let paths: Vec<&str> = spec.paths.paths.keys().map(String::as_str).collect();
@@ -316,7 +401,11 @@ mod tests {
         for expected in [
             "/health",
             "/ready",
+            "/v1/audio/transcriptions",
+            "/v1/audio/translations",
+            "/v1/embeddings",
             "/v1/models",
+            "/v1/models/{model}",
             "/v1/responses",
             "/v1/responses/compact",
             "/v1/conversations",
@@ -475,6 +564,52 @@ mod tests {
     }
 
     #[test]
+    fn model_retrieval_declares_the_model_object_body() {
+        let spec = serde_json::to_value(ApiDoc::openapi()).expect("spec must serialize");
+        let response_schema =
+            &spec["paths"]["/v1/models/{model}"]["get"]["responses"]["200"]["content"]["application/json"]["schema"];
+
+        assert_eq!(response_schema["$ref"], "#/components/schemas/ModelObject");
+    }
+
+    #[test]
+    fn audio_routes_declare_a_multipart_upload() {
+        let spec = serde_json::to_value(ApiDoc::openapi()).expect("spec must serialize");
+
+        for path in ["/v1/audio/transcriptions", "/v1/audio/translations"] {
+            let request_schema =
+                &spec["paths"][path]["post"]["requestBody"]["content"]["multipart/form-data"]["schema"];
+            assert_eq!(request_schema["$ref"], "#/components/schemas/AudioUploadForm", "{path}");
+        }
+    }
+
+    #[test]
+    fn messages_tool_schema_preserves_named_provider_declarations() {
+        let spec = serde_json::to_value(ApiDoc::openapi()).unwrap();
+        let schema = &spec["components"]["schemas"]["ToolParam"];
+        let validator = jsonschema::validator_for(schema).unwrap();
+        for value in [
+            serde_json::json!({"name":"echo","input_schema":{"type":"object"}}),
+            serde_json::json!({"name":"echo","input_schema":false,"type":null,"description":null}),
+            serde_json::json!({"type":"web_search_20250305","name":"web_search","max_uses":2}),
+            serde_json::json!({"type":"web_fetch_20250910","name":"web_fetch","allowed_domains":["example.com"]}),
+            serde_json::json!({"type":"future_tool","name":"hosted","future":{"nested":[null,true,42]}}),
+        ] {
+            assert!(validator.is_valid(&value), "schema rejected {value}");
+            assert!(serde_json::from_value::<agentic_core::types::messages::ToolParam>(value).is_ok());
+        }
+        for value in [
+            serde_json::json!({"type":"web_search_20250305"}),
+            serde_json::json!({"name":null}),
+            serde_json::json!({"name":"echo","type":42}),
+            serde_json::json!({"name":"echo","description":false}),
+        ] {
+            assert!(!validator.is_valid(&value), "schema accepted {value}");
+            assert!(serde_json::from_value::<agentic_core::types::messages::ToolParam>(value).is_err());
+        }
+    }
+
+    #[test]
     fn conversation_request_body_is_optional() {
         let spec = serde_json::to_value(ApiDoc::openapi()).expect("spec must serialize");
         let required = spec["paths"]["/v1/conversations"]["post"]["requestBody"]["required"]
@@ -490,6 +625,35 @@ mod tests {
         let ignore_eos = &spec["components"]["schemas"]["RequestPayload"]["properties"]["ignore_eos"];
 
         assert!(ignore_eos.is_object(), "RequestPayload.ignore_eos is undocumented");
+    }
+
+    #[test]
+    fn reasoning_schema_uses_typed_summary_state_and_status() {
+        let spec = serde_json::to_value(ApiDoc::openapi()).expect("spec must serialize");
+        let wrapper = serde_json::json!({
+            "components": spec["components"], "$ref": "#/components/schemas/ReasoningOutput"
+        });
+        let validator = jsonschema::validator_for(&wrapper).expect("reasoning schema must resolve");
+        let valid = serde_json::json!({
+            "id": "rs_1", "content": [{"type":"reasoning_text","text":"thinking"}],
+            "summary": [{"type":"summary_text","text":"summary"}],
+            "encrypted_content": "opaque", "status": "completed"
+        });
+        assert!(validator.is_valid(&valid));
+        for (field, malformed) in [
+            ("encrypted_content", serde_json::json!({"ciphertext":"opaque"})),
+            ("summary", serde_json::json!(["untyped"])),
+            (
+                "content",
+                serde_json::json!([{"type":"summary_text","text":"wrong kind"}]),
+            ),
+            ("status", serde_json::json!("complete")),
+        ] {
+            let mut item = valid.clone();
+            item[field] = malformed;
+            assert!(!validator.is_valid(&item), "schema accepted malformed {field}");
+            assert!(serde_json::from_value::<agentic_core::ReasoningOutput>(item).is_err());
+        }
     }
 
     /// Validates that JSON fixtures representing each tagged-enum variant
@@ -598,9 +762,12 @@ mod tests {
             serde_json::json!({"type": "mcp_list_tools", "id": "mlt1", "server_label": "s", "tools": []}),
             serde_json::json!({"type": "compaction", "id": "cmp1", "encrypted_content": "enc"}),
             serde_json::json!({"type": "compaction_trigger"}),
+            serde_json::json!({"type": "web_search_call", "id": "ws1", "status": "completed", "action": {"type": "search", "query": "q"}}),
+            serde_json::json!({"type": "mcp_call", "id": "mc1", "server_label": "s", "name": "n", "arguments": "{}"}),
         ];
         for fixture in &input_items {
             validate("InputItem", fixture);
+            validate("InOutItem", fixture);
         }
 
         // -- OutputItem: every variant --
@@ -644,13 +811,50 @@ mod tests {
             serde_json::json!({"type": "mcp", "server_label": "s"}),
             serde_json::json!({"type": "web_search_preview"}),
             serde_json::json!({"type": "file_search", "vector_store_ids": ["vs_abc"]}),
-            serde_json::json!({"type": "code_interpreter"}),
+            serde_json::json!({"type": "code_interpreter", "container": {"type": "auto"}}),
             serde_json::json!({"type": "shell", "environment": {"type": "local"}}),
             serde_json::json!({"type": "namespace", "name": "ns", "tools": []}),
             serde_json::json!({"type": "custom", "name": "c"}),
         ];
         for fixture in &tools {
             validate("ResponsesTool", fixture);
+        }
+
+        let containerless_code_interpreter = serde_json::json!({"type": "code_interpreter"});
+        let tool_schema = serde_json::json!({
+            "components": { "schemas": schemas },
+            "$ref": "#/components/schemas/ResponsesTool"
+        });
+        let tool_validator = jsonschema::validator_for(&tool_schema).expect("valid ResponsesTool schema");
+        assert!(
+            tool_validator
+                .iter_errors(&containerless_code_interpreter)
+                .next()
+                .is_some(),
+            "schema must require a code-interpreter container"
+        );
+        assert!(
+            serde_json::from_value::<agentic_core::types::tools::ResponsesTool>(containerless_code_interpreter)
+                .is_err(),
+            "serde must require a code-interpreter container"
+        );
+
+        for unsupported in [
+            serde_json::json!({"type": "code_interpreter", "execution": "gateway"}),
+            serde_json::json!({
+                "type": "code_interpreter",
+                "container": {"type": "auto"},
+                "execution": "gateway"
+            }),
+        ] {
+            assert!(
+                tool_validator.iter_errors(&unsupported).next().is_some(),
+                "schema must reject the unsupported gateway selector: {unsupported}"
+            );
+            assert!(
+                serde_json::from_value::<agentic_core::types::tools::ResponsesTool>(unsupported).is_err(),
+                "serde must reject the unsupported gateway selector"
+            );
         }
 
         // -- ToolChoice: all accepted forms including legacy --

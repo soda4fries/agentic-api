@@ -17,12 +17,14 @@ fn request_context() -> RequestContext {
     }))
     .expect("valid request");
     RequestContext {
+        multi_agent_tree: None,
         original_request: request.clone(),
         enriched_request: request,
         new_input_items: Vec::new(),
         response_id: "resp_reserved".to_owned(),
         conversation_id: None,
         conversation_version: None,
+        continuation: None,
     }
 }
 

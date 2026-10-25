@@ -5,6 +5,7 @@ use std::{
 };
 
 use crate::agentic_output::redact_url;
+use crate::model_capabilities::CodexModelCapabilities;
 
 #[derive(Debug)]
 pub struct HarnessEnv {
@@ -19,13 +20,18 @@ pub const CLAUDE_CANONICAL_MODEL: &str = "claude-sonnet-4-5-20250929";
 
 /// Write an isolated Codex home for an Agentic API session.
 ///
+/// `capabilities` must be the entry the gateway resolved for `model`: Codex strips image content
+/// from a request when this catalog says the model accepts text only, and offers the reasoning
+/// levels this catalog lists, so both values are required rather than defaulted.
+///
 /// # Errors
 ///
 /// Returns an I/O error when the temporary home or generated files cannot be written.
-pub fn prepare_codex_home(
+pub(crate) fn prepare_codex_home(
     root: &Path,
     gateway_url: &str,
     model: &str,
+    capabilities: &CodexModelCapabilities,
     api_key: Option<&str>,
 ) -> Result<HarnessEnv, io::Error> {
     fs::create_dir_all(root)?;
@@ -39,13 +45,9 @@ pub fn prepare_codex_home(
             "supported_in_api": true,
             "visibility": "list",
             "priority": 0,
-            "input_modalities": ["text"],
-            "default_reasoning_level": "medium",
-            "supported_reasoning_levels": [
-                {"effort": "low", "description": "Fast responses"},
-                {"effort": "medium", "description": "Balanced responses"},
-                {"effort": "high", "description": "Deep reasoning"}
-            ],
+            "input_modalities": capabilities.input_modalities,
+            "default_reasoning_level": capabilities.default_reasoning_level(),
+            "supported_reasoning_levels": capabilities.reasoning_levels(),
             "supports_reasoning_summaries": true,
             "supports_parallel_tool_calls": true,
             // apply_patch_tool_type is intentionally omitted: Codex only supports
@@ -221,11 +223,28 @@ mod tests {
     use std::fs;
 
     use super::{prepare_claude_home, prepare_claude_home_with_state, prepare_codex_home};
+    use crate::model_capabilities::{CodexModelCapabilities, CodexReasoningLevel, InputModalities};
+
+    /// An entry with the given modalities and no advertised reasoning levels.
+    fn capabilities(slug: &str, input_modalities: InputModalities) -> CodexModelCapabilities {
+        CodexModelCapabilities {
+            slug: slug.to_owned(),
+            input_modalities,
+            supported_reasoning_levels: Vec::new(),
+        }
+    }
 
     #[test]
     fn codex_config_is_isolated_and_contains_gateway_provider() {
         let root = unique_temp_dir("codex");
-        let env = prepare_codex_home(&root, "http://127.0.0.1:3000", "Qwen/test", None).expect("config");
+        let env = prepare_codex_home(
+            &root,
+            "http://127.0.0.1:3000",
+            "Qwen/test",
+            &capabilities("Qwen/test", InputModalities::Text),
+            None,
+        )
+        .expect("config");
         let config = fs::read_to_string(root.join("config.toml")).expect("config file");
 
         assert!(config.contains("[model_providers.agentic-api]"));
@@ -241,14 +260,26 @@ mod tests {
     #[test]
     fn codex_home_removes_inherited_openai_key_unless_explicitly_configured() {
         let root = unique_temp_dir("codex-credential-isolation");
-        let without_key = prepare_codex_home(&root, "http://127.0.0.1:3000", "Qwen/test", None)
-            .expect("Codex config without gateway key");
+        let without_key = prepare_codex_home(
+            &root,
+            "http://127.0.0.1:3000",
+            "Qwen/test",
+            &capabilities("Qwen/test", InputModalities::Text),
+            None,
+        )
+        .expect("Codex config without gateway key");
 
         assert!(without_key.environment_remove.contains(&"OPENAI_API_KEY".to_owned()));
         assert!(!without_key.environment.contains_key("OPENAI_API_KEY"));
 
-        let with_key = prepare_codex_home(&root, "http://127.0.0.1:3000", "Qwen/test", Some("gateway-key"))
-            .expect("Codex config with gateway key");
+        let with_key = prepare_codex_home(
+            &root,
+            "http://127.0.0.1:3000",
+            "Qwen/test",
+            &capabilities("Qwen/test", InputModalities::Text),
+            Some("gateway-key"),
+        )
+        .expect("Codex config with gateway key");
         assert_eq!(
             with_key.environment.get("OPENAI_API_KEY"),
             Some(&"gateway-key".to_owned())
@@ -442,6 +473,132 @@ mod tests {
 
         let mode = fs::metadata(state_root).expect("state metadata").permissions().mode() & 0o777;
         assert_eq!(mode, 0o700);
+    }
+
+    #[test]
+    fn codex_catalog_advertises_the_resolved_input_modalities() {
+        for (modalities, expected) in [
+            (InputModalities::Text, serde_json::json!(["text"])),
+            (InputModalities::TextAndImage, serde_json::json!(["text", "image"])),
+        ] {
+            let root = unique_temp_dir("codex-modalities");
+            prepare_codex_home(
+                &root,
+                "http://127.0.0.1:3000",
+                "Qwen/test",
+                &capabilities("Qwen/test", modalities),
+                None,
+            )
+            .expect("config");
+            let catalog: serde_json::Value =
+                serde_json::from_str(&fs::read_to_string(root.join("model_catalog.json")).expect("catalog file"))
+                    .expect("valid catalog JSON");
+
+            assert_eq!(catalog["models"][0]["input_modalities"], expected);
+            assert_eq!(catalog["models"][0]["slug"], "Qwen/test");
+
+            fs::remove_dir_all(root).expect("cleanup");
+        }
+    }
+
+    #[test]
+    fn codex_catalog_advertises_the_gateway_reasoning_levels() {
+        let root = unique_temp_dir("codex-reasoning-levels");
+        let configured = CodexModelCapabilities {
+            slug: "Qwen/test".to_owned(),
+            input_modalities: InputModalities::Text,
+            supported_reasoning_levels: vec![
+                CodexReasoningLevel {
+                    effort: agentic_core::types::messages::ReasoningEffortLevel::Low,
+                    description: "Fast".into(),
+                },
+                CodexReasoningLevel {
+                    effort: agentic_core::types::messages::ReasoningEffortLevel::Max,
+                    description: "Deepest".into(),
+                },
+            ],
+        };
+        prepare_codex_home(&root, "http://127.0.0.1:3000", "Qwen/test", &configured, None).expect("config");
+        let catalog: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(root.join("model_catalog.json")).expect("catalog file"))
+                .expect("valid catalog JSON");
+        let model = &catalog["models"][0];
+
+        assert_eq!(
+            model["supported_reasoning_levels"],
+            serde_json::json!([
+                {"effort": "low", "description": "Fast"},
+                {"effort": "max", "description": "Deepest"}
+            ]),
+            "the launcher keeps the levels and descriptions the gateway advertised"
+        );
+        assert_eq!(
+            model["default_reasoning_level"], "low",
+            "a catalog without medium starts on its first level"
+        );
+
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn codex_catalog_falls_back_to_the_default_reasoning_levels() {
+        let root = unique_temp_dir("codex-default-reasoning-levels");
+        prepare_codex_home(
+            &root,
+            "http://127.0.0.1:3000",
+            "Qwen/test",
+            &capabilities("Qwen/test", InputModalities::Text),
+            None,
+        )
+        .expect("config");
+        let catalog: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(root.join("model_catalog.json")).expect("catalog file"))
+                .expect("valid catalog JSON");
+        let model = &catalog["models"][0];
+
+        assert_eq!(
+            model["supported_reasoning_levels"],
+            serde_json::to_value(crate::model_capabilities::default_codex_reasoning_levels()).unwrap(),
+            "a gateway that advertises no levels keeps the default catalog"
+        );
+        assert_eq!(model["default_reasoning_level"], "medium");
+
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn codex_catalog_keeps_its_launcher_specific_tool_settings() {
+        let root = unique_temp_dir("codex-tool-settings");
+        prepare_codex_home(
+            &root,
+            "http://127.0.0.1:3000",
+            "Qwen/test",
+            &capabilities("Qwen/test", InputModalities::TextAndImage),
+            None,
+        )
+        .expect("config");
+        let catalog: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(root.join("model_catalog.json")).expect("catalog file"))
+                .expect("valid catalog JSON");
+        let model = &catalog["models"][0];
+
+        assert_eq!(
+            model["shell_type"], "local",
+            "the launcher runs Codex against a local shell"
+        );
+        assert!(
+            model.get("apply_patch_tool_type").is_none(),
+            "the launcher omits apply_patch_tool_type so Codex edits through the shell tool"
+        );
+        assert_eq!(
+            model["truncation_policy"],
+            serde_json::json!({"limit": 32768, "mode": "tokens"})
+        );
+        assert_eq!(model["supports_image_detail_original"], false);
+        assert_eq!(model["web_search_tool_type"], "text");
+        assert_eq!(model["include_skills_usage_instructions"], false);
+
+        fs::remove_dir_all(root).expect("cleanup");
     }
 
     fn unique_temp_dir(name: &str) -> std::path::PathBuf {

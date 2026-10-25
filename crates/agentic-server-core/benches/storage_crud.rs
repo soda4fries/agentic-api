@@ -1,7 +1,8 @@
 use criterion::{BatchSize, Criterion, black_box, criterion_group};
 
-use agentic_core::storage::{ConversationStore, InOutItem, ResponseMetadata, ResponseStore, create_pool_with_schema};
+use agentic_core::storage::{ConversationStore, ResponseMetadata, ResponseStore, create_pool_with_schema};
 use agentic_core::types::event::MessageStatus;
+use agentic_core::types::io::InOutItem;
 use agentic_core::types::io::{InputItem, InputMessage, InputMessageContent, OutputItem, OutputMessage};
 
 static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -13,10 +14,9 @@ fn next_id() -> String {
 
 fn create_test_items() -> Vec<InOutItem> {
     let input_item = InputItem::Message(InputMessage {
-        id: None,
         role: "user".to_string(),
-        status: None,
         content: InputMessageContent::Text("Test message".to_string()),
+        ..Default::default()
     });
 
     let output_msg = OutputMessage::new("msg_123", MessageStatus::Completed);

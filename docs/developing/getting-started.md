@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Rust toolchain (MSRV 1.85)
+- Rust toolchain (MSRV 1.98.1)
 - [pre-commit](https://pre-commit.com/)
 
 ## Building
@@ -96,3 +96,8 @@ options.
 [sccache]: https://github.com/mozilla/sccache
 [sccache-install]: https://github.com/mozilla/sccache#installation
 [sccache-usage]: https://github.com/mozilla/sccache#usage
+
+## Releases
+
+Maintainers should follow the [release guide](releases.md) to prepare a version and trigger the GitHub Actions
+workflows that validate and publish to crates.io and PyPI. Merging a PR does not publish a package.

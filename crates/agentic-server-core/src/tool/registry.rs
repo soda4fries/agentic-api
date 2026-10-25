@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+mod file_search;
 use std::collections::HashSet;
 use std::collections::hash_map::Entry;
 use std::future::{Future, ready};
@@ -6,21 +7,24 @@ use std::future::{Future, ready};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
+use super::code_interpreter::CodeInterpreterHandler;
 use super::codex::insert_namespace_entries;
 use super::custom::{CustomHandler, CustomToolMap, insert_custom_entry};
+use super::declaration::ToolDeclaration;
 use super::executors::GatewayExecutors;
-use super::file_search::handler::insert_file_search_entry;
 use super::function::insert_function_entry;
 use super::mcp::registry::insert_discovered_mcp_entry;
+use super::normalize::code_interpreter_unavailable_error;
 use super::ownership::{GatewayBinding, ToolOwnership};
 use super::shell::insert_shell_entry;
 use super::tool_search::{TOOL_SEARCH_NAME, insert_tool_search_entry};
+use super::web_fetch::insert_web_fetch_entry;
 use super::web_search::insert_web_search_entry;
 use super::{CodexNamespaceHandler, McpHandler, NamespaceMap, ToolError, ToolOutput};
 
 use crate::types::io::output::{FunctionToolCall, McpListTools};
-use crate::types::io::{InputItem, ResponsesInput};
-use crate::types::tools::{CodeInterpreterToolParam, ResponsesTool};
+use crate::types::io::{InOutItem, InputItem, ResponsesInput};
+use crate::types::tools::{CodeInterpreterToolParam, WebFetchToolParam};
 
 const MAX_MCP_SERVERS_PER_REQUEST: usize = 64;
 const MAX_DISCOVERED_MCP_TOOLS_PER_REQUEST: usize = 128;
@@ -39,6 +43,8 @@ pub enum ToolType {
     /// Note: the corresponding `ResponsesTool` wire tag is `"web_search_preview"`.
     /// `ToolType` is not used in wire-facing types so the names differ intentionally.
     WebSearch,
+    /// Gateway-executed page fetch, declared only through the Messages seam.
+    WebFetch,
     FileSearch,
     CodeInterpreter,
 }
@@ -54,6 +60,7 @@ impl ToolType {
             Self::CodexNamespace => "Codex namespace tool",
             Self::Mcp => "MCP tool",
             Self::WebSearch => "web search tool",
+            Self::WebFetch => "web fetch tool",
             Self::FileSearch => "file search tool",
             Self::CodeInterpreter => "code interpreter tool",
         }
@@ -79,6 +86,9 @@ pub struct ToolEntry {
     /// For MCP tools: which server this tool belongs to.
     pub server_label: Option<String>,
     pub ownership: ToolOwnership,
+    /// The declaration is async: the model continues without waiting for this tool's output.
+    /// Only client-owned function, custom, and namespace member entries can be async.
+    pub async_execution: bool,
 }
 
 impl std::fmt::Debug for ToolEntry {
@@ -87,6 +97,7 @@ impl std::fmt::Debug for ToolEntry {
             .field("tool_type", &self.tool_type)
             .field("server_label", &self.server_label)
             .field("is_gateway", &self.ownership.is_gateway())
+            .field("async_execution", &self.async_execution)
             .finish()
     }
 }
@@ -99,6 +110,7 @@ impl ToolEntry {
             tool_type,
             server_label,
             ownership: ToolOwnership::Client,
+            async_execution: false,
         }
     }
 
@@ -110,7 +122,16 @@ impl ToolEntry {
             tool_type,
             server_label,
             ownership: ToolOwnership::Gateway(binding),
+            async_execution: false,
         }
+    }
+
+    /// Marks a client-owned entry async, as its declaration requests.
+    #[must_use]
+    pub(crate) fn with_async_execution(mut self, async_execution: bool) -> Self {
+        debug_assert!(!async_execution || matches!(self.ownership, ToolOwnership::Client));
+        self.async_execution = async_execution;
+        self
     }
 }
 
@@ -143,18 +164,40 @@ pub struct GatewayDispatchResult {
     pub output: Result<ToolOutput, ToolError>,
 }
 
-// TODO: move to a dedicated code_interpreter module alongside its `ToolHandler`
-// once code_interpreter execution is implemented.
-fn insert_code_interpreter_entry(entries: &mut HashMap<String, ToolEntry>, _params: &CodeInterpreterToolParam) {
-    entries.insert(
-        "code_interpreter".to_owned(),
-        ToolEntry::gateway(ToolType::CodeInterpreter, None, None),
-    );
+fn insert_code_interpreter_entry(
+    entries: &mut HashMap<String, ToolEntry>,
+    executors: &GatewayExecutors,
+    param: &CodeInterpreterToolParam,
+) -> Result<(), ToolError> {
+    let executor = executors
+        .code_interpreter_executor()
+        .ok_or_else(code_interpreter_unavailable_error)?;
+    insert_unique_tool_entries(entries, |resolved| {
+        resolved.insert(
+            super::code_interpreter::CODE_INTERPRETER_FUNCTION_NAME.to_owned(),
+            ToolEntry::gateway(
+                ToolType::CodeInterpreter,
+                None,
+                Some(GatewayBinding::new(executor, param.clone())),
+            ),
+        );
+    })
+}
+
+/// Binds the operator-enabled `web_fetch` executor to a Messages declaration;
+/// a disabled executor fails the request before an entry exists.
+fn insert_web_fetch_binding(
+    entries: &mut HashMap<String, ToolEntry>,
+    executors: &GatewayExecutors,
+    param: &WebFetchToolParam,
+) -> Result<(), ToolError> {
+    let executor = executors.require_web_fetch()?;
+    insert_unique_tool_entries(entries, |resolved| insert_web_fetch_entry(resolved, param, executor))
 }
 
 /// Request-scoped registry built from `RequestPayload.tools`.
 /// Maps the name the LLM sees → routing metadata.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct ToolRegistry {
     entries: HashMap<String, ToolEntry>,
 
@@ -187,7 +230,7 @@ impl ToolRegistry {
     /// [`ToolError::Execution`] when discovered MCP metadata exceeds its byte
     /// or tool-count limit.
     pub async fn build_with_handlers(
-        tools: &mut [ResponsesTool],
+        tools: &mut [ToolDeclaration],
         executors: &mut GatewayExecutors,
     ) -> Result<Self, ToolError> {
         let mut remaining = MAX_MCP_DISCOVERY_BYTES;
@@ -214,7 +257,7 @@ impl ToolRegistry {
     /// that crossed the limit. Keeping the callback generic preserves the dependency direction:
     /// tool registration does not depend on executor error or policy types.
     pub(crate) async fn build_with_handlers_guarded<E, Acquire, AcquireFuture, Guard>(
-        tools: &mut [ResponsesTool],
+        tools: &mut [ToolDeclaration],
         executors: &mut GatewayExecutors,
         mut consume_materialized: impl FnMut(usize) -> Result<(), E>,
         mut acquire_materialization: Acquire,
@@ -234,15 +277,19 @@ impl ToolRegistry {
         McpHandler::validate_server_labels(&resolved_tools)?;
         validate_mcp_server_count(&resolved_tools)?;
 
+        CodeInterpreterHandler::validate_declarations(&resolved_tools)?;
+
         for (index, tool) in resolved_tools.iter().enumerate() {
             match tool {
-                ResponsesTool::Function(p) => {
+                ToolDeclaration::Function(p) => {
                     insert_unique_tool_entries(&mut entries, |resolved| insert_function_entry(resolved, p))?;
                 }
-                ResponsesTool::ToolSearch(param) => {
-                    insert_unique_tool_entries(&mut entries, |resolved| insert_tool_search_entry(resolved, param))?;
+                ToolDeclaration::ToolSearch(param) => {
+                    insert_unique_tool_entries(&mut entries, |resolved| {
+                        insert_tool_search_entry(resolved, param);
+                    })?;
                 }
-                ResponsesTool::Mcp(p) => {
+                ToolDeclaration::Mcp(p) => {
                     let _materialization_guard = acquire_materialization().await;
                     let tool_set = match executors.mcp_server_tools(p).await {
                         Ok(tool_set) => tool_set,
@@ -278,8 +325,8 @@ impl ToolRegistry {
                         .entry(p.server_label.clone())
                         .or_default()
                         .push(tool_set.list_tools_item);
-                    if let ResponsesTool::Mcp(declaration) = &mut tools[index] {
-                        declaration.discovered_tools = handlers.iter().map(|item| item.param.clone()).collect();
+                    if let ToolDeclaration::Mcp(declared) = &mut tools[index] {
+                        declared.discovered_tools = handlers.iter().map(|item| item.param.clone()).collect();
                     }
                     for discovered in handlers {
                         insert_unique_tool_entries(&mut entries, |resolved| {
@@ -287,38 +334,35 @@ impl ToolRegistry {
                         })?;
                     }
                 }
-                ResponsesTool::WebSearch(p) => {
+                ToolDeclaration::WebSearch(p) => {
                     insert_unique_tool_entries(&mut entries, |resolved| {
                         insert_web_search_entry(resolved, p, executors.web_search_handler());
                     })?;
                 }
-                ResponsesTool::FileSearch(p) => {
-                    let handler = executors.file_search_handler();
-                    let include = executors.include_file_search_results;
+                ToolDeclaration::WebFetch(p) => insert_web_fetch_binding(&mut entries, executors, p)?,
+                ToolDeclaration::FileSearch(p) => file_search::insert_file_search_binding(&mut entries, executors, p)?,
+                ToolDeclaration::CodeInterpreter(param) => {
+                    insert_code_interpreter_entry(&mut entries, executors, param)?;
+                }
+                ToolDeclaration::Shell(_) => {
                     insert_unique_tool_entries(&mut entries, |resolved| {
-                        insert_file_search_entry(resolved, p, handler, include);
+                        insert_shell_entry(resolved);
                     })?;
                 }
-                ResponsesTool::CodeInterpreter(p) => {
-                    insert_unique_tool_entries(&mut entries, |resolved| insert_code_interpreter_entry(resolved, p))?;
-                }
-                ResponsesTool::Shell(_) => {
-                    insert_unique_tool_entries(&mut entries, insert_shell_entry)?;
-                }
-                ResponsesTool::Namespace(p) => {
+                ToolDeclaration::Namespace(p) => {
                     insert_unique_tool_entries(&mut entries, |resolved| insert_namespace_entries(resolved, p))?;
                 }
-                ResponsesTool::Custom(p) => {
+                ToolDeclaration::Custom(p) => {
                     insert_unique_tool_entries(&mut entries, |resolved| insert_custom_entry(resolved, p))?;
                 }
-                ResponsesTool::Unknown => {
-                    tracing::debug!("unknown tool declared but skipped in registry");
+                ToolDeclaration::Unsupported => {
+                    tracing::debug!("unsupported tool declared but skipped in registry");
                 }
             }
         }
 
-        let namespace_map = CodexNamespaceHandler.build_namespace_map((!tools.is_empty()).then_some(tools))?;
-        let custom_tool_map = CustomHandler::build_tool_map(tools);
+        let namespace_map = CodexNamespaceHandler.build_namespace_map((!tools.is_empty()).then_some(&*tools))?;
+        let custom_tool_map = CustomHandler::build_tool_map(&*tools);
 
         Ok(Self {
             entries,
@@ -350,6 +394,14 @@ impl ToolRegistry {
     /// Effective classification facts, without execution bindings.
     pub(crate) fn tool_classifications(&self) -> impl Iterator<Item = (&str, ToolType)> {
         self.entries.keys().map(|name| (name.as_str(), self.tool_type(name)))
+    }
+
+    /// Model-visible names of the request's async client tools.
+    pub(crate) fn async_tool_names(&self) -> impl Iterator<Item = &str> {
+        self.entries
+            .iter()
+            .filter(|(_, entry)| entry.async_execution)
+            .map(|(name, _)| name.as_str())
     }
 
     #[cfg(test)]
@@ -390,8 +442,8 @@ impl ToolRegistry {
 
     pub(crate) fn cache_listed_mcp_tools(&mut self, input: &ResponsesInput) {
         if let ResponsesInput::Items(items) = input {
-            for item in items {
-                let InputItem::McpListTools(list_tools) = item else {
+            for item in items.iter().filter_map(InOutItem::as_input) {
+                let InputItem::McpListTools(list_tools) = &*item else {
                     continue;
                 };
                 // Only a currently declared MCP server can emit discovery in
@@ -498,10 +550,10 @@ impl ToolRegistry {
     }
 }
 
-fn validate_mcp_server_count(tools: &[ResponsesTool]) -> Result<(), ToolError> {
+fn validate_mcp_server_count(tools: &[ToolDeclaration]) -> Result<(), ToolError> {
     let mcp_server_count = tools
         .iter()
-        .filter(|tool| matches!(tool, ResponsesTool::Mcp(_)))
+        .filter(|tool| matches!(tool, ToolDeclaration::Mcp(_)))
         .count();
     if mcp_server_count > MAX_MCP_SERVERS_PER_REQUEST {
         return Err(ToolError::Config(format!(
@@ -523,43 +575,116 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
     use std::sync::Arc;
 
     use super::*;
+    use crate::tool::codex::model_visible_namespace_member_name;
+    use crate::tool::declaration::ToolDeclaration;
     use crate::tool::executors::GatewayExecutorRegistration;
     use crate::tool::mcp::{McpDiscoveredHandler, McpHandler};
+    use crate::tool::responses_declarations;
     use crate::types::io::output::McpListTool;
-    use crate::types::tools::McpDiscoveredToolParam;
+    use crate::types::tools::{McpDiscoveredToolParam, ResponsesTool};
 
-    fn declaration(server_label: &str) -> ResponsesTool {
-        serde_json::from_value(serde_json::json!({
+    #[test]
+    fn code_interpreter_tool_type_is_inherently_gateway_owned() {
+        assert!(ToolType::CodeInterpreter.is_gateway_owned());
+    }
+
+    /// Async declarations reach the registry under their model-visible names, including the
+    /// flattened name of an async namespace member.
+    #[tokio::test]
+    async fn async_declarations_register_their_model_visible_names() {
+        let wire: Vec<ResponsesTool> = serde_json::from_value(serde_json::json!([
+            {"type": "function", "name": "get_weather", "async": true},
+            {"type": "function", "name": "get_time"},
+            {"type": "custom", "name": "echo", "async": true},
+            {
+                "type": "namespace",
+                "name": "travel",
+                "tools": [
+                    {"type": "function", "name": "book", "async": true},
+                    {"type": "function", "name": "cancel"}
+                ]
+            }
+        ]))
+        .unwrap();
+        let mut tools = responses_declarations(&wire);
+
+        let registry = ToolRegistry::build_with_handlers(&mut tools, &mut GatewayExecutors::default())
+            .await
+            .expect("client tools register");
+
+        let names: BTreeSet<&str> = registry.async_tool_names().collect();
+        let member = model_visible_namespace_member_name("travel", "book");
+        assert_eq!(names, BTreeSet::from(["get_weather", "echo", member.as_str()]));
+    }
+
+    #[cfg(feature = "embedded-code-interpreter")]
+    #[tokio::test]
+    async fn enabled_code_interpreter_registers_a_gateway_binding() {
+        let config = crate::config::ToolRuntimeConfig {
+            code_interpreter: crate::config::CodeInterpreterRuntimeConfig {
+                enabled: true,
+                ..crate::config::CodeInterpreterRuntimeConfig::default()
+            },
+            ..crate::config::ToolRuntimeConfig::default()
+        };
+        let mut executors = GatewayExecutors::from_config(Arc::new(reqwest::Client::new()), &config)
+            .expect("enabled code interpreter executor");
+        let mut tools: Vec<ToolDeclaration> = vec![
+            serde_json::from_value::<ResponsesTool>(serde_json::json!({
+                "type": "code_interpreter",
+                "container": {"type": "auto"}
+            }))
+            .expect("code interpreter declaration")
+            .into(),
+        ];
+
+        let registry = ToolRegistry::build_with_handlers(&mut tools, &mut executors)
+            .await
+            .expect("code interpreter registry");
+        let entry = registry
+            .lookup(super::super::code_interpreter::CODE_INTERPRETER_FUNCTION_NAME)
+            .expect("code interpreter registry entry");
+
+        assert_eq!(entry.tool_type, ToolType::CodeInterpreter);
+        assert!(matches!(entry.ownership, ToolOwnership::Gateway(Some(_))));
+    }
+
+    fn declaration(server_label: &str) -> ToolDeclaration {
+        serde_json::from_value::<ResponsesTool>(serde_json::json!({
             "type": "mcp",
             "server_label": server_label,
             "server_url": "http://127.0.0.1:8000/mcp",
             "require_approval": "never"
         }))
         .expect("MCP declaration")
+        .into()
     }
 
     /// A request-declared MCP tool for a server the gateway already has
     /// configured. Configured servers reject a request-supplied `server_url`,
     /// so declarations for them must omit it.
-    fn configured_declaration(server_label: &str) -> ResponsesTool {
-        serde_json::from_value(serde_json::json!({
+    fn configured_declaration(server_label: &str) -> ToolDeclaration {
+        serde_json::from_value::<ResponsesTool>(serde_json::json!({
             "type": "mcp",
             "server_label": server_label
         }))
         .expect("MCP declaration")
+        .into()
     }
 
-    fn unreachable_declaration(server_label: &str) -> ResponsesTool {
-        serde_json::from_value(serde_json::json!({
+    fn unreachable_declaration(server_label: &str) -> ToolDeclaration {
+        serde_json::from_value::<ResponsesTool>(serde_json::json!({
             "type": "mcp",
             "server_label": server_label,
             "server_url": "http://127.0.0.1:1/mcp",
             "require_approval": "never"
         }))
         .expect("unreachable MCP declaration")
+        .into()
     }
 
     fn discovered_handler(server_label: &str, tool_name: &str, internal_name: &str) -> McpDiscoveredHandler {
@@ -601,8 +726,8 @@ mod tests {
             .collect()
     }
 
-    fn mixed_tool_declarations() -> Vec<ResponsesTool> {
-        serde_json::from_value(serde_json::json!([
+    fn mixed_tool_declarations() -> Vec<ToolDeclaration> {
+        serde_json::from_value::<Vec<ResponsesTool>>(serde_json::json!([
             {
                 "type": "function",
                 "name": "echo",
@@ -614,7 +739,6 @@ mod tests {
             },
             {"type": "web_search_preview", "search_context_size": "low"},
             {"type": "file_search", "vector_store_ids": ["vs_test"]},
-            {"type": "code_interpreter"},
             {
                 "type": "namespace",
                 "name": "mcp__shell",
@@ -624,6 +748,9 @@ mod tests {
             {"type": "future_tool", "opaque": true}
         ]))
         .expect("mixed tool declarations")
+        .into_iter()
+        .map(ToolDeclaration::from)
+        .collect()
     }
 
     #[test]
@@ -699,7 +826,7 @@ mod tests {
     #[test]
     fn ignores_mcp_list_history_for_servers_absent_from_current_registry() {
         let mut registry = ToolRegistry::default();
-        let input = ResponsesInput::Items(vec![
+        let input = ResponsesInput::from(vec![
             InputItem::McpListTools(McpListTools::new("mcpl_1", "counter", Vec::new())),
             InputItem::McpListTools(McpListTools::new("mcpl_2", "search", Vec::new())),
         ]);
@@ -815,17 +942,18 @@ mod tests {
         });
         let mut tools = mixed_tool_declarations();
         tools.push(
-            serde_json::from_value(serde_json::json!({
+            serde_json::from_value::<ResponsesTool>(serde_json::json!({
                 "type": "shell", "environment": {"type": "local"}
             }))
-            .expect("shell declaration"),
+            .expect("shell declaration")
+            .into(),
         );
 
         let registry = ToolRegistry::build_with_handlers(&mut tools, &mut executors)
             .await
             .expect("mixed registry");
 
-        assert_eq!(registry.len(), 9);
+        assert_eq!(registry.len(), 8);
         assert!(registry.contains_mcp_server_label("counter"));
         assert!(!registry.contains_mcp_server_label("missing"));
         assert_mcp_list_tools_metadata(&registry);
@@ -838,7 +966,6 @@ mod tests {
             ("mcp__counter__get_value", ToolType::Mcp, Some("counter"), true),
             ("web_search", ToolType::WebSearch, None, true),
             ("file_search", ToolType::FileSearch, None, true),
-            ("code_interpreter", ToolType::CodeInterpreter, None, false),
             (
                 "agentic_ns__mcp__shell__run",
                 ToolType::CodexNamespace,
@@ -867,7 +994,6 @@ mod tests {
             "mcp__counter__get_value",
             "web_search",
             "file_search",
-            "code_interpreter",
         ] {
             assert!(registry.is_gateway_owned_name(name), "'{name}' should be gateway-owned");
         }
@@ -875,7 +1001,7 @@ mod tests {
             assert!(!registry.is_gateway_owned_name(name), "'{name}' should be client-owned");
         }
 
-        let ResponsesTool::Mcp(declared) = &tools[1] else {
+        let ToolDeclaration::Mcp(declared) = &tools[1] else {
             panic!("expected MCP declaration");
         };
         assert_eq!(declared.discovered_tools.len(), 2);
@@ -888,7 +1014,7 @@ mod tests {
             ["mcp__counter__increment", "mcp__counter__get_value"]
         );
 
-        let ResponsesTool::Namespace(namespace) = &tools[5] else {
+        let ToolDeclaration::Namespace(namespace) = &tools[4] else {
             panic!("expected namespace declaration");
         };
         assert!(matches!(
@@ -896,6 +1022,167 @@ mod tests {
             [crate::types::tools::CodexNamespaceMember::Function(function)] if function.name.as_str() == "run"
         ));
         assert_namespace_mapping(&registry);
+    }
+
+    #[tokio::test]
+    async fn web_fetch_registers_only_with_an_enabled_executor() {
+        let declaration = ToolDeclaration::WebFetch(crate::types::tools::WebFetchToolParam::default());
+        let mut executors = GatewayExecutors::from_env(Arc::new(reqwest::Client::new()));
+        let registry = ToolRegistry::build_with_handlers(&mut [declaration.clone()], &mut executors)
+            .await
+            .expect("web_fetch registry");
+        let entry = registry.lookup("web_fetch").expect("web_fetch entry");
+        assert_eq!(entry.tool_type, ToolType::WebFetch);
+        assert!(matches!(entry.ownership, ToolOwnership::Gateway(Some(_))));
+        assert!(registry.is_gateway_owned_name("web_fetch"));
+
+        let error = ToolRegistry::build_with_handlers(&mut [declaration], &mut GatewayExecutors::default())
+            .await
+            .expect_err("a disabled executor must not register a placeholder");
+        assert!(matches!(error, ToolError::Config(message) if message.contains("web_fetch is disabled")));
+    }
+
+    /// The status a handler sets on its output reaches the dispatcher's caller
+    /// unchanged, so a loop never has to parse an output to learn it.
+    #[tokio::test]
+    async fn dispatch_carries_the_handlers_output_status() {
+        use std::pin::Pin;
+
+        use crate::tool::handler::{GatewayExecutor, ToolHandler, ToolOutputStatus};
+        use crate::types::io::FunctionTool;
+        use crate::types::tools::WebSearchToolParam;
+
+        struct Refusing;
+
+        impl ToolHandler for Refusing {
+            type ToolParams = WebSearchToolParam;
+
+            fn tool_type(&self) -> ToolType {
+                ToolType::WebSearch
+            }
+
+            fn validate(&self, _params: &WebSearchToolParam) -> Result<(), ToolError> {
+                Ok(())
+            }
+
+            fn normalize(&self, _params: &WebSearchToolParam) -> Vec<FunctionTool> {
+                Vec::new()
+            }
+        }
+
+        impl GatewayExecutor for Refusing {
+            type ExecutionParams = WebSearchToolParam;
+
+            fn execute(
+                &self,
+                call_id: &str,
+                _tool_name: &str,
+                _arguments: &str,
+                _params: &WebSearchToolParam,
+            ) -> Pin<Box<dyn Future<Output = Result<ToolOutput, ToolError>> + Send + '_>> {
+                let call_id = call_id.to_owned();
+                Box::pin(async move { Ok(ToolOutput::failure(call_id, r#"{"error":"refused"}"#)) })
+            }
+        }
+
+        let mut entries = HashMap::new();
+        entries.insert(
+            "probe".to_owned(),
+            ToolEntry::gateway(
+                ToolType::WebSearch,
+                None,
+                Some(GatewayBinding::new(Arc::new(Refusing), WebSearchToolParam::default())),
+            ),
+        );
+        let registry = ToolRegistry {
+            entries,
+            ..ToolRegistry::default()
+        };
+        let call = FunctionToolCall {
+            async_execution: false,
+            agent: None,
+            id: "fc_1".to_owned(),
+            call_id: "call_1".to_owned(),
+            name: "probe".to_owned(),
+            arguments: "{}".to_owned(),
+            status: crate::types::event::MessageStatus::Completed,
+            namespace: None,
+        };
+
+        let result = registry.dispatch(&call).await.expect("a gateway entry dispatches");
+        let output = result.output.expect("the handler answered");
+        assert_eq!(result.tool_type, ToolType::WebSearch);
+        assert_eq!(output.call_id, "call_1");
+        assert_eq!(output.status, ToolOutputStatus::Failure);
+        assert!(output.is_failure());
+    }
+
+    #[tokio::test]
+    async fn build_with_handlers_rejects_unavailable_code_interpreter_before_entry_creation() {
+        let mut tools: Vec<ToolDeclaration> = vec![
+            serde_json::from_value::<ResponsesTool>(serde_json::json!({
+                "type": "code_interpreter",
+                "container": {"type": "auto"}
+            }))
+            .expect("code interpreter declaration")
+            .into(),
+        ];
+        let mut executors = GatewayExecutors::default();
+
+        let error = ToolRegistry::build_with_handlers(&mut tools, &mut executors)
+            .await
+            .expect_err("unavailable code interpreter must not register a placeholder entry");
+
+        assert!(matches!(
+            error,
+            ToolError::Config(message) if message.contains("code_interpreter")
+        ));
+    }
+
+    #[tokio::test]
+    async fn build_with_handlers_accepts_client_tools_named_code_interpreter_without_builtin() {
+        for declaration in [
+            serde_json::json!({"type": "function", "name": "code_interpreter"}),
+            serde_json::json!({"type": "custom", "name": "code_interpreter"}),
+        ] {
+            let mut tools = vec![ToolDeclaration::from(
+                serde_json::from_value::<ResponsesTool>(declaration).expect("client declaration"),
+            )];
+            let mut executors = GatewayExecutors::default();
+
+            let registry = ToolRegistry::build_with_handlers(&mut tools, &mut executors)
+                .await
+                .expect("client tool name remains available without the built-in");
+            assert!(registry.lookup("code_interpreter").is_some());
+        }
+    }
+
+    #[tokio::test]
+    async fn build_with_handlers_rejects_code_interpreter_name_collision_before_unavailable() {
+        for conflicting_tool in [
+            serde_json::json!({"type": "function", "name": "code_interpreter"}),
+            serde_json::json!({"type": "custom", "name": "code_interpreter"}),
+        ] {
+            let mut tools = serde_json::from_value::<Vec<ResponsesTool>>(serde_json::json!([
+                {"type": "code_interpreter", "container": {"type": "auto"}},
+                conflicting_tool
+            ]))
+            .expect("individual declarations parse")
+            .into_iter()
+            .map(ToolDeclaration::from)
+            .collect::<Vec<_>>();
+            let mut executors = GatewayExecutors::default();
+
+            let error = ToolRegistry::build_with_handlers(&mut tools, &mut executors)
+                .await
+                .expect_err("fixed model-visible name collisions must fail before availability handling");
+
+            assert!(
+                error
+                    .to_string()
+                    .contains("fixed model-visible tool name 'code_interpreter'")
+            );
+        }
     }
 
     #[tokio::test]
@@ -1111,11 +1398,13 @@ mod tests {
         let internal_name = "mcp__counter__increment";
 
         for mcp_first in [false, true] {
-            let function = serde_json::from_value(serde_json::json!({
-                "type": "function",
-                "name": internal_name
-            }))
-            .expect("function declaration");
+            let function = ToolDeclaration::from(
+                serde_json::from_value::<ResponsesTool>(serde_json::json!({
+                    "type": "function",
+                    "name": internal_name
+                }))
+                .expect("function declaration"),
+            );
             let mcp = configured_declaration("counter");
             let mut tools = if mcp_first {
                 vec![mcp, function]

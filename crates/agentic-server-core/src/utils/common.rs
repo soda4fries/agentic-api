@@ -23,6 +23,44 @@ pub fn serialize_to_string<T: serde::Serialize>(value: &T) -> Result<String, ser
     serde_json::to_string(value)
 }
 
+/// Count serialized JSON bytes without allocating the complete JSON buffer.
+/// Returns `None` as soon as the serialization exceeds `limit`.
+///
+/// # Errors
+/// Returns a serialization error unrelated to the size limit.
+pub fn serialized_size_up_to<T: serde::Serialize>(value: &T, limit: usize) -> Result<Option<usize>, serde_json::Error> {
+    struct Counter {
+        used: usize,
+        limit: usize,
+        exceeded: bool,
+    }
+    impl std::io::Write for Counter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            if bytes.len() > self.limit.saturating_sub(self.used) {
+                self.exceeded = true;
+                return Err(std::io::Error::other("serialized size limit exceeded"));
+            }
+            self.used += bytes.len();
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut counter = Counter {
+        used: 0,
+        limit,
+        exceeded: false,
+    };
+    let result = serde_json::to_writer(&mut counter, value);
+    if counter.exceeded {
+        return Ok(None);
+    }
+    result?;
+    Ok(Some(counter.used))
+}
+
 /// Serialize any type to a `serde_json::Value`.
 ///
 /// # Errors
@@ -139,6 +177,33 @@ pub fn deserialize_from_value_or_custom_default<T: serde::de::DeserializeOwned, 
 #[must_use]
 pub fn deserialize_from_value_opt<T: serde::de::DeserializeOwned>(value: serde_json::Value) -> Option<T> {
     serde_json::from_value(value).ok()
+}
+
+/// Deserializes a JSON array that may be `null` or absent into a `Vec`, treating both as empty.
+///
+/// # Errors
+///
+/// Returns the deserializer's error when the value is neither `null` nor an array of `T`.
+pub fn deserialize_nullable_vec<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::Deserialize<'de>,
+{
+    <Option<Vec<T>> as serde::Deserialize>::deserialize(deserializer).map(Option::unwrap_or_default)
+}
+
+/// Serde `deserialize_with` helper: deserializes an explicit JSON `null` as the field's default
+/// instead of failing. Pair it with `#[serde(default)]` so an absent field also defaults.
+///
+/// # Errors
+///
+/// Returns the deserializer's error when the value is neither `null` nor a valid `T`.
+pub fn null_as_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Default + serde::Deserialize<'de>,
+{
+    <Option<T> as serde::Deserialize>::deserialize(deserializer).map(Option::unwrap_or_default)
 }
 
 /// Serialize any type to JSON bytes, returning an empty `Vec` on error.

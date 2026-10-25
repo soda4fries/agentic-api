@@ -7,6 +7,7 @@
 
 #![allow(dead_code)]
 
+use std::fmt::Write as _;
 use std::sync::Arc;
 
 use axum::Router;
@@ -22,7 +23,7 @@ use tokio::task::JoinHandle;
 
 use agentic_core::executor::{BoxStream, ConversationHandler, ExecutionContext, ResponseHandler};
 use agentic_core::storage::{ConversationStore, DbPool, ResponseStore, create_pool_with_schema};
-use agentic_core::types::io::OutputItem;
+use agentic_core::types::io::{OutputItem, OutputMessageContent};
 use agentic_core::types::request_response::{RequestPayload, ResponsePayload};
 
 #[derive(Debug, Deserialize)]
@@ -117,14 +118,12 @@ pub fn expected_text(turn: &Turn) -> String {
         let mut out = String::new();
         for raw in sse {
             for line in raw.lines() {
-                if let Some(data) = line.strip_prefix("data: ") {
-                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
-                        if json["type"].as_str() == Some("response.output_text.delta") {
-                            if let Some(delta) = json["delta"].as_str() {
-                                out.push_str(delta);
-                            }
-                        }
-                    }
+                if let Some(data) = line.strip_prefix("data: ")
+                    && let Ok(json) = serde_json::from_str::<serde_json::Value>(data)
+                    && json["type"].as_str() == Some("response.output_text.delta")
+                    && let Some(delta) = json["delta"].as_str()
+                {
+                    out.push_str(delta);
                 }
             }
         }
@@ -193,6 +192,7 @@ pub struct MockServer {
     url: String,
     handle: JoinHandle<()>,
     requests: Arc<Mutex<Vec<Value>>>,
+    headers: Arc<Mutex<Vec<http::HeaderMap>>>,
 }
 
 impl MockServer {
@@ -202,6 +202,10 @@ impl MockServer {
 
     pub async fn request_bodies(&self) -> Vec<Value> {
         self.requests.lock().await.clone()
+    }
+
+    pub async fn request_headers(&self) -> Vec<http::HeaderMap> {
+        self.headers.lock().await.clone()
     }
 }
 
@@ -225,6 +229,12 @@ fn build_response(resp: MockResponse) -> Response {
             .body(axum::body::Body::from(body))
             .unwrap()
             .into_response(),
+        MockResponse::Status(status, body) => Response::builder()
+            .status(status)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(axum::body::Body::from(body))
+            .unwrap()
+            .into_response(),
     }
 }
 
@@ -232,6 +242,8 @@ fn build_response(resp: MockResponse) -> Response {
 pub enum MockResponse {
     Json(String),
     Sse(String),
+    /// A non-2xx JSON error body, as an upstream returns on failure.
+    Status(u16, String),
 }
 
 impl MockResponse {
@@ -255,6 +267,12 @@ impl MockResponse {
 // Use a VecDeque so pop_front is O(1).
 impl MockServer {
     pub async fn start_deque(responses: Vec<MockResponse>) -> Self {
+        Self::start_deque_on("/v1/responses", responses).await
+    }
+
+    /// Queue responses on an arbitrary upstream route (`/v1/messages` for the
+    /// Messages API); everything else matches [`Self::start_deque`].
+    pub async fn start_deque_on(path: &'static str, responses: Vec<MockResponse>) -> Self {
         use std::collections::VecDeque;
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
@@ -265,18 +283,22 @@ impl MockServer {
         let queue: Arc<Mutex<VecDeque<MockResponse>>> = Arc::new(Mutex::new(VecDeque::from(responses)));
         let requests: Arc<Mutex<Vec<Value>>> = Arc::new(Mutex::new(Vec::new()));
         let requests_for_route = Arc::clone(&requests);
+        let headers = Arc::new(Mutex::new(Vec::new()));
+        let headers_for_route = Arc::clone(&headers);
 
         let handle = tokio::spawn(async move {
             let app = Router::new()
                 .route(
-                    "/v1/responses",
-                    post(move |body: axum::body::Bytes| {
+                    path,
+                    post(move |incoming: http::HeaderMap, body: axum::body::Bytes| {
                         let queue = Arc::clone(&queue);
                         let requests = Arc::clone(&requests_for_route);
+                        let headers = Arc::clone(&headers_for_route);
                         async move {
                             let request_body =
                                 serde_json::from_slice::<Value>(&body).expect("request body should be valid JSON");
                             requests.lock().await.push(request_body);
+                            headers.lock().await.push(incoming);
                             let mut q = queue.lock().await;
                             let resp = q.pop_front().expect("mock queue exhausted — check test setup");
                             build_response(resp)
@@ -293,7 +315,12 @@ impl MockServer {
             axum::serve(listener, app).await.ok();
         });
 
-        Self { url, handle, requests }
+        Self {
+            url,
+            handle,
+            requests,
+            headers,
+        }
     }
 }
 
@@ -311,8 +338,10 @@ pub async fn setup_pool() -> Arc<DbPool> {
 /// Bundles everything a test needs.  Dropped at end of test scope.
 pub struct TestFixture {
     pub exec_ctx: Arc<ExecutionContext>,
+    /// Database behind the handlers, exposed for store-level assertions.
+    pub pool: Arc<DbPool>,
     // Kept for its Drop impl — aborts the mock server when the test ends.
-    server: MockServer,
+    pub server: MockServer,
 }
 
 impl TestFixture {
@@ -340,7 +369,7 @@ impl TestFixture {
             server.url().to_string(),
         ));
 
-        Self { exec_ctx, server }
+        Self { exec_ctx, pool, server }
     }
 
     pub async fn new_with_responses(responses: Vec<MockResponse>) -> Self {
@@ -357,12 +386,96 @@ impl TestFixture {
             server.url().to_string(),
         ));
 
-        Self { exec_ctx, server }
+        Self { exec_ctx, pool, server }
     }
 
     pub async fn request_bodies(&self) -> Vec<Value> {
         self.server.request_bodies().await
     }
+}
+
+/// How the search backend behind a gateway `web_search` answers.
+#[derive(Clone)]
+pub enum Search {
+    /// One result titled "private search result", a value no span or metric may carry.
+    Answers,
+    /// Every query fails with a 500.
+    Fails,
+    /// Signals that a search arrived, then never answers it.
+    Hangs(Arc<tokio::sync::Notify>),
+}
+
+/// A search backend serving `GET /v1/search`.
+pub async fn search_server(search: Search) -> (String, JoinHandle<()>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let router = Router::new().route(
+        "/v1/search",
+        axum::routing::get(move || {
+            let search = search.clone();
+            async move {
+                match search {
+                    Search::Answers => axum::Json(serde_json::json!({"results": {
+                        "web": [{"url": "https://example.com", "title": "private search result"}],
+                        "news": []
+                    }}))
+                    .into_response(),
+                    Search::Fails => {
+                        (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "search backend down").into_response()
+                    }
+                    Search::Hangs(arrived) => {
+                        arrived.notify_one();
+                        std::future::pending().await
+                    }
+                }
+            }
+        }),
+    );
+    let task = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    (url, task)
+}
+
+/// A Messages SSE body: each event framed with its `type` as the event name.
+pub fn messages_sse(events: &[Value]) -> MockResponse {
+    let mut body = String::new();
+    for event in events {
+        writeln!(body, "event: {}\ndata: {event}\n", event["type"].as_str().unwrap()).unwrap();
+    }
+    MockResponse::Sse(body)
+}
+
+/// The `message_start` event that opens an upstream Messages stream.
+pub fn messages_start_event() -> Value {
+    serde_json::json!({"type": "message_start", "message": {
+        "id": "msg_upstream", "type": "message", "role": "assistant", "model": "test-model",
+        "content": [], "stop_reason": null, "stop_sequence": null,
+        "usage": {"input_tokens": 3, "output_tokens": 0}}})
+}
+
+/// A Messages turn that answers "hello" and ends with `stop_reason`.
+pub fn messages_json_response(stop_reason: &str) -> MockResponse {
+    MockResponse::Json(
+        serde_json::json!({
+            "id": "msg_upstream", "type": "message", "role": "assistant", "model": "test-model",
+            "content": [{"type": "text", "text": "hello"}],
+            "stop_reason": stop_reason, "stop_sequence": null,
+            "usage": {"input_tokens": 3, "output_tokens": 1}
+        })
+        .to_string(),
+    )
+}
+
+/// The streamed form of [`messages_json_response`].
+pub fn messages_sse_response(stop_reason: &str) -> MockResponse {
+    messages_sse(&[
+        messages_start_event(),
+        serde_json::json!({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}),
+        serde_json::json!({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "hello"}}),
+        serde_json::json!({"type": "content_block_stop", "index": 0}),
+        serde_json::json!({"type": "message_delta", "delta": {"stop_reason": stop_reason, "stop_sequence": null},
+            "usage": {"output_tokens": 1}}),
+        serde_json::json!({"type": "message_stop"}),
+    ])
 }
 
 pub fn text_response(text: &str) -> MockResponse {
@@ -394,6 +507,68 @@ pub fn text_response(text: &str) -> MockResponse {
         })
         .to_string(),
     )
+}
+
+/// A minimal SSE response that streams one assistant message and completes.
+pub fn text_sse_response(text: &str) -> MockResponse {
+    let events = [
+        serde_json::json!({
+            "type": "response.created",
+            "response": {"id": "resp_upstream_final", "status": "in_progress", "usage": null}
+        }),
+        serde_json::json!({
+            "type": "response.output_item.added",
+            "output_index": 0,
+            "item": {
+                "id": "msg_upstream_final", "type": "message", "role": "assistant",
+                "status": "in_progress", "content": []
+            }
+        }),
+        serde_json::json!({
+            "type": "response.output_text.delta", "item_id": "msg_upstream_final",
+            "output_index": 0, "content_index": 0, "delta": text
+        }),
+        serde_json::json!({
+            "type": "response.completed",
+            "response": {"id": "resp_upstream_final", "status": "completed", "usage": null}
+        }),
+    ];
+    let mut body = String::new();
+    for event in events {
+        body.push_str("data: ");
+        body.push_str(&serde_json::to_string(&event).expect("event serializes"));
+        body.push_str("\n\n");
+    }
+    body.push_str("data: [DONE]\n\n");
+    MockResponse::Sse(body)
+}
+
+/// A model server whose lifecycle snapshots omit `tools` and `tool_choice` entirely. The
+/// gateway has to report the declarations the client submitted on those frames itself.
+pub fn sse_omitting_tool_declarations(response: MockResponse) -> MockResponse {
+    let MockResponse::Sse(body) = response else {
+        panic!("expected an SSE fixture");
+    };
+    let mut out = String::new();
+    for line in body.lines() {
+        let Some(payload) = line.strip_prefix("data: ") else {
+            continue;
+        };
+        if payload == "[DONE]" {
+            continue;
+        }
+        let mut event: Value = serde_json::from_str(payload).expect("SSE data is JSON");
+        if event["type"] == "response.created" || event["type"] == "response.in_progress" {
+            let response = event["response"].as_object_mut().expect("response object");
+            response.remove("tools");
+            response.remove("tool_choice");
+        }
+        out.push_str("data: ");
+        out.push_str(&serde_json::to_string(&event).expect("event serializes"));
+        out.push_str("\n\n");
+    }
+    out.push_str("data: [DONE]\n\n");
+    MockResponse::Sse(out)
 }
 
 pub fn function_call_response(id: &str, call_id: &str, name: &str, arguments: &str) -> MockResponse {
@@ -494,28 +669,14 @@ pub fn make_request(
     conversation_id: Option<String>,
 ) -> RequestPayload {
     RequestPayload {
-        model: "test-model".to_string(),
+        model: "test-model".into(),
         input: serde_json::from_value(serde_json::to_value(input).expect("serialize Responses input"))
             .expect("request should contain valid Responses input"),
-        instructions: None,
         previous_response_id,
-        conversation_id,
-        tools: None,
-        tool_choice: None,
+        conversation: conversation_id,
         stream,
         store,
-        include: None,
-        reasoning: None,
-        text: None,
-        temperature: None,
-        top_p: None,
-        max_output_tokens: None,
-        ignore_eos: None,
-        truncation: None,
-        metadata: None,
-        parallel_tool_calls: None,
-        cache_salt: None,
-        context_management: None,
+        ..Default::default()
     }
 }
 
@@ -534,14 +695,13 @@ pub async fn collect_stream(result: Either<ResponsePayload, BoxStream>) -> Respo
     };
     let mut stream = Box::pin(stream);
     while let Some(chunk) = stream.next().await {
-        if let Some(mut event) = streamed_sse_event(&chunk) {
-            if event.get("type").and_then(Value::as_str) == Some("response.completed")
-                && let Some(response) = event.get_mut("response")
-                && let Ok(payload) = serde_json::from_value::<ResponsePayload>(response.take())
-            {
-                while stream.next().await.is_some() {}
-                return payload;
-            }
+        if let Some(mut event) = streamed_sse_event(&chunk)
+            && event.get("type").and_then(Value::as_str) == Some("response.completed")
+            && let Some(response) = event.get_mut("response")
+            && let Ok(payload) = serde_json::from_value::<ResponsePayload>(response.take())
+        {
+            while stream.next().await.is_some() {}
+            return payload;
         }
     }
     panic!("stream ended without a ResponsePayload chunk");
@@ -553,8 +713,9 @@ pub fn output_text(payload: &ResponsePayload) -> String {
         .output
         .iter()
         .filter_map(|item| match item {
-            OutputItem::Message(msg) => Some(msg.content.iter().map(|c| c.text.as_str()).collect::<String>()),
+            OutputItem::Message(msg) => Some(msg.content.iter().map(OutputMessageContent::text).collect::<String>()),
             OutputItem::FunctionCall(_)
+            | OutputItem::CodeInterpreterCall(_)
             | OutputItem::ToolSearchCall(_)
             | OutputItem::CustomToolCall(_)
             | OutputItem::ShellCall(_)
@@ -564,7 +725,37 @@ pub fn output_text(payload: &ResponsePayload) -> String {
             | OutputItem::McpListTools(_)
             | OutputItem::Reasoning(_)
             | OutputItem::Compaction(_)
+            | OutputItem::MultiAgentCall(_)
+            | OutputItem::MultiAgentCallOutput(_)
+            | OutputItem::AgentMessage(_)
             | OutputItem::Unknown => None,
         })
         .collect::<String>()
+}
+
+/// Decodes a request's query string into a JSON object; numeric values become
+/// numbers and repeated keys become arrays, so tests can assert on it directly.
+pub fn query_params_as_json(uri: &axum::http::Uri) -> serde_json::Value {
+    let mut params = serde_json::Map::new();
+    for (key, value) in url::form_urlencoded::parse(uri.query().unwrap_or_default().as_bytes()) {
+        let value = if let Ok(number) = value.parse::<u64>() {
+            serde_json::Value::from(number)
+        } else {
+            serde_json::Value::String(value.into_owned())
+        };
+        let key = key.into_owned();
+        match params.remove(&key) {
+            None => {
+                params.insert(key, value);
+            }
+            Some(serde_json::Value::Array(mut values)) => {
+                values.push(value);
+                params.insert(key, serde_json::Value::Array(values));
+            }
+            Some(previous) => {
+                params.insert(key, serde_json::Value::Array(vec![previous, value]));
+            }
+        }
+    }
+    serde_json::Value::Object(params)
 }

@@ -43,7 +43,7 @@ use agentic_core::config::Config;
 use agentic_core::executor::{ConversationHandler, ExecutionContext, ResponseHandler};
 use agentic_core::proxy::ProxyState;
 use agentic_core::storage::{ConversationStore, ResponseStore, create_pool_with_schema};
-use agentic_server::app::{AppState, ServerConfig, WebSocketTracker, build_router};
+use agentic_server::app::{AppState, DEFAULT_MAX_REQUEST_BODY_SIZE, ServerConfig, WebSocketTracker, build_router};
 
 fn bench_turns() -> usize {
     std::env::var("BENCH_TURNS")
@@ -70,14 +70,12 @@ async fn bench_model(llm_url: &str) -> String {
         return m;
     }
     // Only auto-detect when pointing at a real server
-    if std::env::var("LLM_BASE_URL").is_ok() {
-        if let Ok(resp) = reqwest::get(format!("{llm_url}/v1/models")).await {
-            if let Ok(json) = resp.json::<serde_json::Value>().await {
-                if let Some(id) = json["data"][0]["id"].as_str() {
-                    return id.to_string();
-                }
-            }
-        }
+    if std::env::var("LLM_BASE_URL").is_ok()
+        && let Ok(resp) = reqwest::get(format!("{llm_url}/v1/models")).await
+        && let Ok(json) = resp.json::<serde_json::Value>().await
+        && let Some(id) = json["data"][0]["id"].as_str()
+    {
+        return id.to_string();
     }
     "mock".to_string()
 }
@@ -162,6 +160,7 @@ async fn spawn_gateway(llm_url: &str) -> (Arc<reqwest::Client>, String) {
         postgres: agentic_core::config::PostgresConfig::default(),
         sqlite: agentic_core::config::SqliteConfig::default(),
         tools: agentic_core::config::ToolRuntimeConfig::default(),
+        responses: agentic_core::config::ResponsesConfig::default(),
     };
 
     let proxy_state = ProxyState::new(config.clone()).unwrap();
@@ -181,6 +180,8 @@ async fn spawn_gateway(llm_url: &str) -> (Arc<reqwest::Client>, String) {
         llm_api_base: config.llm_api_base,
         skip_llm_ready_check: config.skip_llm_ready_check,
         openai_api_key: config.openai_api_key,
+        model_capabilities: std::sync::Arc::default(),
+        max_request_body_size: DEFAULT_MAX_REQUEST_BODY_SIZE,
     };
 
     let router = build_router(state, &ServerConfig::from_env());

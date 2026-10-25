@@ -1,20 +1,24 @@
-//! Typed output-item state and completion merging for response accumulation.
+//! Identity and lifecycle of per-round output items.
+//!
+//! [`SlotMap`] resolves output indexes and item IDs, enforces active/completed
+//! transitions, detects duplicate or conflicting completion, and dispatches to
+//! the per-kind state in [`super::active`]. Retained-byte accounting is owned by
+//! each slot's [`RetainedAccount`]: incremental growth is charged by the active
+//! state as it happens, and completion and finalization reconcile against the
+//! comprehensive [`RetainedSize`] measurement of the completed item.
+
+mod identity;
 
 use super::Validation;
-use super::completion::MergeDone;
+use super::active::ActiveItem;
 use std::collections::HashMap;
 
 use indexmap::IndexMap;
 
-use crate::events::types::ShellCommandUpdate;
 use crate::events::{EventPayload, SSEItemType};
 use crate::executor::error::{ExecutorError, ExecutorResult};
-use crate::types::event::MessageStatus;
-use crate::types::io::output::McpListTools;
-use crate::types::io::{
-    ApplyDone, CompactionItem, CustomToolCall, FileSearchCall, FunctionToolCall, McpCall, OutputItem, OutputMessage,
-    OutputTextContent, ReasoningOutput, ShellCall, ToolSearchCall, WebSearchCall,
-};
+use crate::executor::response_budget::{ExecutorResponseBudget, RetainedAccount, RetainedSize};
+use crate::types::io::{AgentAttribution, OutputItem, ReasoningOutput};
 use crate::utils::common::deserialize_from_value_opt;
 use crate::utils::uuid7_str;
 
@@ -35,7 +39,9 @@ impl OutputIndex {
 pub(super) struct ItemIdentity<'a> {
     pub(super) index: Option<OutputIndex>,
     pub(super) item_id: Option<&'a str>,
-    pub(super) item_type: SSEItemType,
+    /// Shared content events resolve their item kind from the existing slot.
+    pub(super) item_type: Option<SSEItemType>,
+    pub(super) event_agent: Option<&'a AgentAttribution>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -50,6 +56,9 @@ enum SlotAction {
 pub(super) struct SlotMap {
     slots: IndexMap<OutputIndex, Slot>,
     indexes_by_id: HashMap<String, OutputIndex>,
+    // Lenient completion may recover omitted fields from streaming state. That
+    // compatibility behavior is not proof that interrupting upstream is safe.
+    completion_uncertain: bool,
 }
 
 impl SlotMap {
@@ -63,118 +72,97 @@ impl SlotMap {
             .any(|slot| matches!(slot.state, SlotState::Active(_)))
     }
 
+    pub(super) fn at_steering_boundary(&self) -> bool {
+        !self.slots.is_empty() && !self.has_active() && !self.completion_uncertain
+    }
+
     pub(super) fn get(&self, index: OutputIndex) -> Option<&Slot> {
         self.slots.get(&index)
     }
 
-    pub(super) fn drain_output(&mut self) -> impl Iterator<Item = OutputItem> + '_ {
+    pub(super) fn drain_output_with_budget(
+        &mut self,
+        budget: Option<&ExecutorResponseBudget>,
+    ) -> ExecutorResult<Vec<OutputItem>> {
+        // Collaboration items have no public incomplete status. Do not fabricate
+        // completion from an opening snapshot on truncated lenient streams.
+        if self
+            .slots
+            .values()
+            .any(|slot| matches!(&slot.state, SlotState::Active(item) if item.item_type().is_collaboration()))
+        {
+            return Err(invalid("upstream stream ended with unfinished collaboration items"));
+        }
         self.slots.sort_keys();
         self.indexes_by_id.clear();
-        self.slots.drain(..).filter_map(|(_, slot)| slot.state.finalize())
+        let mut items = Vec::new();
+        for (_, mut slot) in self.slots.drain(..) {
+            if let Some(item) = slot.state.finalize() {
+                // Final reconciliation verifies incremental accounting against
+                // the comprehensive measurement of what is actually retained.
+                slot.account.reconcile(budget, item.retained_bytes())?;
+                items.push(item);
+            }
+        }
+        Ok(items)
     }
 
-    /// Resolves without mutating either map; a rejected event cannot bind an ID.
-    fn resolve(
-        &self,
+    fn insert(
+        &mut self,
+        index: OutputIndex,
         identity: ItemIdentity<'_>,
-        action: SlotAction,
-        validation: Validation,
-    ) -> ExecutorResult<Option<OutputIndex>> {
-        let index_only_shell_command = identity.item_type == SSEItemType::ShellCall && action == SlotAction::Mutate;
-        if validation == Validation::Strict
-            && (identity.index.is_none() || (identity.item_id.is_none() && !index_only_shell_command))
-        {
-            return Err(invalid("upstream item requires 'output_index' and a non-empty item ID"));
+        state: SlotState,
+        mut account: RetainedAccount,
+        budget: Option<&ExecutorResponseBudget>,
+    ) -> ExecutorResult<()> {
+        let item_id = identity.item_id;
+        if let Some(agent) = identity.event_agent {
+            account.charge(budget, agent.retained_bytes())?;
         }
-        let by_id = identity.item_id.and_then(|id| self.indexes_by_id.get(id)).copied();
-        if let (Some(index), Some(known)) = (identity.index, by_id)
-            && index != known
-        {
-            return Err(identity_mismatch());
-        }
-        let index = if let Some(index) = identity.index.or(by_id) {
-            index
-        } else {
-            // Without an index, an unknown ID cannot identify an anonymous
-            // slot. Do not guess by kind or silently create a duplicate.
-            if action != SlotAction::Open
-                && self.slots.values().any(|slot| {
-                    slot.state.item_type() == Some(identity.item_type)
-                        && (slot.item_id.is_none() || identity.item_id.is_none())
-                })
-            {
-                return Err(invalid("upstream item has ambiguous identity without 'output_index'"));
-            }
-            if action == SlotAction::Mutate {
-                return Ok(None);
-            }
-            self.unused_index()?
-        };
-        let Some(slot) = self.slots.get(&index) else {
-            return match action {
-                SlotAction::Open => Ok(Some(index)),
-                SlotAction::Complete if validation == Validation::Lenient => Ok(Some(index)),
-                _ if validation == Validation::Strict => Err(no_active_item()),
-                _ => Ok(None),
-            };
-        };
-        if action == SlotAction::Open {
-            return Err(invalid(
-                "upstream stream repeats output item or reuses its output_index",
-            ));
-        }
-        if let (Some(bound), Some(supplied)) = (slot.item_id.as_deref(), identity.item_id)
-            && bound != supplied
-        {
-            return Err(identity_mismatch());
-        }
-        if slot.state.item_type() != Some(identity.item_type) {
-            return if action == SlotAction::Mutate && validation == Validation::Lenient {
-                Ok(None)
-            } else {
-                Err(identity_mismatch())
-            };
-        }
-        if matches!(slot.state, SlotState::Done(_))
-            && (action != SlotAction::Complete || validation == Validation::Strict)
-        {
-            return if validation == Validation::Strict {
-                Err(no_active_item())
-            } else {
-                Ok(None)
-            };
-        }
-        Ok(Some(index))
-    }
-
-    fn unused_index(&self) -> ExecutorResult<OutputIndex> {
-        (0..=u32::MAX)
-            .map(OutputIndex)
-            .find(|index| !self.slots.contains_key(index))
-            .ok_or_else(|| invalid("upstream stream exhausted output indexes"))
-    }
-
-    fn insert(&mut self, index: OutputIndex, item_id: Option<&str>, state: SlotState) {
         if let Some(id) = item_id {
+            // Identity indexes share the logical item ID charge. A pending kind
+            // without its typed item must still pay before the indexes grow.
+            if state.id() != Some(id) {
+                account.charge(budget, id.len())?;
+            }
             self.indexes_by_id.insert(id.to_owned(), index);
         }
         self.slots.insert(
             index,
             Slot {
                 item_id: item_id.map(str::to_owned),
+                event_agent: identity.event_agent.cloned(),
                 state,
+                account,
             },
         );
+        Ok(())
     }
 
-    fn bind_id(&mut self, index: OutputIndex, item_id: Option<&str>) {
-        if let Some(id) = item_id
+    fn bind_identity(
+        &mut self,
+        index: OutputIndex,
+        identity: ItemIdentity<'_>,
+        budget: Option<&ExecutorResponseBudget>,
+    ) -> ExecutorResult<()> {
+        if let Some(agent) = identity.event_agent
+            && let Some(slot) = self.slots.get_mut(&index)
+            && slot.event_agent.is_none()
+        {
+            slot.account.charge(budget, agent.retained_bytes())?;
+            slot.event_agent = Some(agent.clone());
+        }
+        if let Some(id) = identity.item_id
             && let Some(slot) = self.slots.get_mut(&index)
             && slot.item_id.is_none()
         {
+            if slot.state.id() != Some(id) {
+                slot.account.charge(budget, id.len())?;
+            }
             slot.item_id = Some(id.to_owned());
             self.indexes_by_id.insert(id.to_owned(), index);
         }
+        Ok(())
     }
 
     pub(super) fn open(
@@ -182,14 +170,25 @@ impl SlotMap {
         identity: ItemIdentity<'_>,
         payload: &EventPayload,
         validation: Validation,
+        budget: Option<&ExecutorResponseBudget>,
     ) -> ExecutorResult<Option<OutputIndex>> {
         let Some(index) = self.resolve(identity, SlotAction::Open, validation)? else {
             return Ok(None);
         };
         if let Some(item) = ActiveItem::from_added(payload) {
-            self.insert(index, identity.item_id, SlotState::Active(item));
+            // The opening snapshot is measured with the same rules as the
+            // completed item, and charged before the slot retains it.
+            let mut account = RetainedAccount::default();
+            account.charge(budget, item.retained_bytes())?;
+            self.insert(index, identity, SlotState::Active(item), account, budget)?;
             return Ok(Some(index));
         }
+        if identity.item_type.is_some_and(SSEItemType::is_collaboration) {
+            return Err(invalid("collaboration item has an invalid opening snapshot"));
+        }
+        // An unmodeled opening may represent hosted work. Ignoring it for
+        // lenient compatibility cannot establish a safe interruption point.
+        self.completion_uncertain = true;
         Ok(None)
     }
 
@@ -198,18 +197,33 @@ impl SlotMap {
         identity: ItemIdentity<'_>,
         payload: &EventPayload,
         validation: Validation,
+        budget: Option<&ExecutorResponseBudget>,
     ) -> ExecutorResult<Option<OutputIndex>> {
         let Some(index) = self.resolve(identity, SlotAction::Mutate, validation)? else {
             return Ok(None);
         };
-        if let Some(Slot {
-            state: SlotState::Active(item),
+        let Some(slot) = self.slots.get_mut(&index) else {
+            return Ok(None);
+        };
+        if let EventPayload::FunctionCallArgsDelta {
+            call_id: Some(observed),
             ..
-        }) = self.slots.get_mut(&index)
-        {
-            item.apply_event(payload)?;
         }
-        self.bind_id(index, identity.item_id);
+        | EventPayload::FunctionCallArgsDone {
+            call_id: Some(observed),
+            ..
+        } = payload
+            && let Some(previous) = slot.state.call_id()
+            && !previous.is_empty()
+            && !observed.is_empty()
+            && previous != observed
+        {
+            self.completion_uncertain = true;
+        }
+        if let SlotState::Active(item) = &mut slot.state {
+            item.apply_event(payload, &mut slot.account, budget)?;
+        }
+        self.bind_identity(index, identity, budget)?;
         Ok(Some(index))
     }
 
@@ -219,6 +233,7 @@ impl SlotMap {
         payload: &EventPayload,
         validated_done_item: Option<&OutputItem>,
         validation: Validation,
+        budget: Option<&ExecutorResponseBudget>,
     ) -> ExecutorResult<Option<OutputIndex>> {
         let Some(index) = self.resolve(identity, SlotAction::Complete, validation)? else {
             return Ok(None);
@@ -226,22 +241,35 @@ impl SlotMap {
         let EventPayload::OutputItemDone { item: raw_item, .. } = payload else {
             return Ok(None);
         };
-        let parsed = validated_done_item.cloned().or_else(|| {
+        let mut parsed = validated_done_item.cloned().or_else(|| {
             deserialize_from_value_opt::<OutputItem>(raw_item.clone()).or_else(|| {
-                (identity.item_type == SSEItemType::Reasoning)
+                (identity.item_type == Some(SSEItemType::Reasoning))
                     .then(|| ReasoningOutput::try_from(payload).ok().map(OutputItem::Reasoning))
                     .flatten()
             })
         });
+        if let Some(previous) = self.slots.get(&index).and_then(|slot| slot.state.call_id())
+            && !previous.is_empty()
+            && parsed.as_ref().and_then(super::identity::output_item_call_id) != Some(previous)
+        {
+            self.completion_uncertain = true;
+        }
+        if let Some(OutputItem::CodeInterpreterCall(call)) = &mut parsed
+            && call.id.is_empty()
+            && let Some(SlotState::Done(OutputItem::CodeInterpreterCall(previous))) =
+                self.slots.get(&index).map(|slot| &slot.state)
+        {
+            call.id.clone_from(&previous.id);
+        }
         if let Some(slot) = self.slots.get(&index) {
-            if let SlotState::Active(ActiveItem::ShellCall {
-                item,
-                command_stream: Some(done),
-                ..
-            }) = &slot.state
-                && (done.iter().any(|complete| !complete)
+            if let SlotState::Active(active) = &slot.state {
+                self.completion_uncertain |= !active.validate_completion(parsed.as_ref(), raw_item)?;
+            }
+            if let SlotState::Active(active) = &slot.state
+                && let Some(shell) = active.shell_call().filter(|shell| shell.tracks_commands())
+                && (shell.has_unfinished_commands()
                     || !matches!(parsed.as_ref(), Some(OutputItem::ShellCall(completed))
-                        if completed.action.commands == item.action.commands))
+                        if completed.action.commands == shell.item.action.commands))
             {
                 return Err(invalid("shell item done has unfinished or contradictory commands"));
             }
@@ -250,7 +278,7 @@ impl SlotMap {
                     .as_ref()
                     .is_some_and(|candidate| semantically_equal(previous, candidate))
             {
-                self.bind_id(index, identity.item_id);
+                self.bind_identity(index, identity, budget)?;
                 return Ok(None);
             }
             let candidate = slot.state.completion_candidate(
@@ -263,7 +291,7 @@ impl SlotMap {
                     .as_ref()
                     .is_some_and(|candidate| semantically_equal(previous, candidate))
                 {
-                    self.bind_id(index, identity.item_id);
+                    self.bind_identity(index, identity, budget)?;
                     return Ok(None);
                 }
                 return Err(invalid(format!(
@@ -272,17 +300,47 @@ impl SlotMap {
                 )));
             }
             if let Some(item) = candidate {
-                self.bind_id(index, identity.item_id);
+                // Recovery can synthesize completed fields from an unfinished
+                // stream. Preserve that existing behavior, but require the
+                // actual done snapshot to agree before cutting upstream.
+                self.completion_uncertain |= !parsed
+                    .as_ref()
+                    .is_some_and(|original| semantically_equal(&item, original));
+                // The completed item is measured once, comprehensively; only
+                // what streaming could not account for (metadata supplied at
+                // completion, containers of done-only parts) is charged here.
+                let mut account = slot.account;
+                account.reconcile(
+                    budget,
+                    item.retained_bytes() + slot.event_agent.as_ref().map_or(0, RetainedSize::retained_bytes),
+                )?;
                 if let Some(slot) = self.slots.get_mut(&index) {
                     slot.state = SlotState::Done(item);
+                    slot.account = account;
                 }
+                self.bind_identity(index, identity, budget)?;
                 return Ok(Some(index));
             }
             return Ok(None);
         }
+        // A lenient done-only recovery has no observed opening to validate.
+        // Retain ordinary compatibility, but await the natural terminal before
+        // treating this response as settled.
+        self.completion_uncertain = true;
+        self.complete_done_only(index, identity, parsed, budget)
+    }
+
+    fn complete_done_only(
+        &mut self,
+        index: OutputIndex,
+        identity: ItemIdentity<'_>,
+        parsed: Option<OutputItem>,
+        budget: Option<&ExecutorResponseBudget>,
+    ) -> ExecutorResult<Option<OutputIndex>> {
         if let Some(
             mut item @ (OutputItem::Reasoning(_)
             | OutputItem::FunctionCall(_)
+            | OutputItem::CodeInterpreterCall(_)
             | OutputItem::ToolSearchCall(_)
             | OutputItem::CustomToolCall(_)
             | OutputItem::ShellCall(_)
@@ -290,7 +348,10 @@ impl SlotMap {
             | OutputItem::WebSearchCall(_)
             | OutputItem::McpCall(_)
             | OutputItem::McpListTools(_)
-            | OutputItem::Compaction(_)),
+            | OutputItem::Compaction(_)
+            | OutputItem::MultiAgentCall(_)
+            | OutputItem::MultiAgentCallOutput(_)
+            | OutputItem::AgentMessage(_)),
         ) = parsed
         {
             if let OutputItem::WebSearchCall(call) = &mut item
@@ -298,7 +359,14 @@ impl SlotMap {
             {
                 call.id = uuid7_str("ws_");
             }
-            self.insert(index, identity.item_id, SlotState::Done(item));
+            if let OutputItem::CodeInterpreterCall(call) = &mut item
+                && call.id.is_empty()
+            {
+                call.id = uuid7_str("ci_");
+            }
+            let mut account = RetainedAccount::default();
+            account.charge(budget, item.retained_bytes())?;
+            self.insert(index, identity, SlotState::Done(item), account, budget)?;
             return Ok(Some(index));
         }
         Ok(None)
@@ -324,281 +392,15 @@ fn semantically_equal(left: &OutputItem, right: &OutputItem) -> bool {
     }
 }
 
-/// Tracks a single output item currently being streamed, together with its
-/// accumulated text/arguments buffer.
-#[derive(Clone)]
-pub(super) enum ActiveItem {
-    Message {
-        item: OutputMessage,
-        text: String,
-    },
-    Reasoning {
-        item: ReasoningOutput,
-    },
-    FunctionCall {
-        item: FunctionToolCall,
-        arguments: String,
-    },
-    ToolSearchCall {
-        item: ToolSearchCall,
-    },
-    CustomToolCall {
-        item: CustomToolCall,
-        input: String,
-    },
-    ShellCall {
-        item: ShellCall,
-        command_stream: Option<Vec<bool>>,
-        command: String,
-    },
-    FileSearchCall {
-        item: Option<FileSearchCall>,
-    },
-    WebSearchCall {
-        item: Option<WebSearchCall>,
-    },
-    McpCall {
-        item: McpCall,
-    },
-    McpListTools {
-        item: McpListTools,
-    },
-    Compaction {
-        item: CompactionItem,
-    },
-}
-
-impl std::fmt::Debug for ActiveItem {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Message { .. } => write!(f, "ActiveItem::Message {{ .. }}"),
-            Self::Reasoning { .. } => write!(f, "ActiveItem::Reasoning {{ .. }}"),
-            Self::FunctionCall { .. } => write!(f, "ActiveItem::FunctionCall {{ .. }}"),
-            Self::ToolSearchCall { .. } => write!(f, "ActiveItem::ToolSearchCall {{ .. }}"),
-            Self::CustomToolCall { .. } => write!(f, "ActiveItem::CustomToolCall {{ .. }}"),
-            Self::ShellCall { .. } => write!(f, "ActiveItem::ShellCall {{ .. }}"),
-            Self::FileSearchCall { .. } => write!(f, "ActiveItem::FileSearchCall {{ .. }}"),
-            Self::WebSearchCall { .. } => write!(f, "ActiveItem::WebSearchCall {{ .. }}"),
-            Self::McpCall { .. } => write!(f, "ActiveItem::McpCall {{ .. }}"),
-            Self::McpListTools { .. } => write!(f, "ActiveItem::McpListTools {{ .. }}"),
-            Self::Compaction { .. } => write!(f, "ActiveItem::Compaction {{ .. }}"),
-        }
-    }
-}
-
-impl ActiveItem {
-    fn from_added(payload: &EventPayload) -> Option<Self> {
-        let EventPayload::OutputItemAdded { item_type, .. } = payload else {
-            return None;
-        };
-        match item_type {
-            SSEItemType::ShellCall => ShellCall::try_from(payload).ok().map(|item| Self::ShellCall {
-                item,
-                command_stream: None,
-                command: String::new(),
-            }),
-            SSEItemType::Reasoning => ReasoningOutput::try_from(payload)
-                .ok()
-                .map(|item| ActiveItem::Reasoning { item }),
-            SSEItemType::FunctionCall => {
-                FunctionToolCall::try_from(payload)
-                    .ok()
-                    .map(|item| ActiveItem::FunctionCall {
-                        item,
-                        arguments: String::with_capacity(128),
-                    })
-            }
-            SSEItemType::ToolSearchCall => ToolSearchCall::try_from(payload)
-                .ok()
-                .map(|item| ActiveItem::ToolSearchCall { item }),
-            SSEItemType::CustomToolCall => {
-                CustomToolCall::try_from(payload)
-                    .ok()
-                    .map(|item| ActiveItem::CustomToolCall {
-                        item,
-                        input: String::with_capacity(256),
-                    })
-            }
-            SSEItemType::Message => OutputMessage::try_from(payload).ok().map(|item| ActiveItem::Message {
-                item,
-                text: String::with_capacity(256),
-            }),
-            SSEItemType::FileSearchCall => Some(ActiveItem::FileSearchCall { item: None }),
-            SSEItemType::WebSearchCall => Some(ActiveItem::WebSearchCall { item: None }),
-            SSEItemType::Compaction => CompactionItem::try_from(payload)
-                .ok()
-                .map(|item| ActiveItem::Compaction { item }),
-            SSEItemType::McpCall => McpCall::try_from(payload).ok().map(|item| ActiveItem::McpCall { item }),
-            SSEItemType::McpListTools => McpListTools::try_from(payload)
-                .ok()
-                .map(|item| ActiveItem::McpListTools { item }),
-        }
-    }
-
-    pub(super) fn item_type(&self) -> SSEItemType {
-        match self {
-            Self::Message { .. } => SSEItemType::Message,
-            Self::Reasoning { .. } => SSEItemType::Reasoning,
-            Self::FunctionCall { .. } => SSEItemType::FunctionCall,
-            Self::ToolSearchCall { .. } => SSEItemType::ToolSearchCall,
-            Self::CustomToolCall { .. } => SSEItemType::CustomToolCall,
-            Self::ShellCall { .. } => SSEItemType::ShellCall,
-            Self::FileSearchCall { .. } => SSEItemType::FileSearchCall,
-            Self::WebSearchCall { .. } => SSEItemType::WebSearchCall,
-            Self::McpCall { .. } => SSEItemType::McpCall,
-            Self::McpListTools { .. } => SSEItemType::McpListTools,
-            Self::Compaction { .. } => SSEItemType::Compaction,
-        }
-    }
-
-    // A temporary candidate for comparing a repeated completion. The retained
-    // slot remains Done, and never regains mutable streaming buffers.
-    fn from_completed(item: OutputItem) -> Option<Self> {
-        Some(match item {
-            OutputItem::ShellCall(item) => Self::ShellCall {
-                item,
-                command_stream: None,
-                command: String::new(),
-            },
-            OutputItem::Message(item) => Self::Message {
-                item,
-                text: String::new(),
-            },
-            OutputItem::Reasoning(item) => Self::Reasoning { item },
-            OutputItem::FunctionCall(item) => Self::FunctionCall {
-                item,
-                arguments: String::new(),
-            },
-            OutputItem::ToolSearchCall(item) => Self::ToolSearchCall { item },
-            OutputItem::CustomToolCall(item) => Self::CustomToolCall {
-                item,
-                input: String::new(),
-            },
-            OutputItem::FileSearchCall(item) => Self::FileSearchCall { item: Some(item) },
-            OutputItem::WebSearchCall(item) => Self::WebSearchCall { item: Some(item) },
-            OutputItem::McpCall(item) => Self::McpCall { item },
-            OutputItem::McpListTools(item) => Self::McpListTools { item },
-            OutputItem::Compaction(item) => Self::Compaction { item },
-            OutputItem::Unknown => return None,
-        })
-    }
-
-    /// Folds a resolved event; the accumulator checks identity and lifecycle first.
-    pub(super) fn apply_event(&mut self, payload: &EventPayload) -> ExecutorResult<()> {
-        match self {
-            Self::ShellCall {
-                item,
-                command_stream,
-                command: buffer,
-            } => {
-                if let EventPayload::ShellCallCommand {
-                    command_index, update, ..
-                } = payload
-                {
-                    let index = *command_index as usize;
-                    let done = command_stream.as_deref().unwrap_or_default();
-                    match update {
-                        ShellCommandUpdate::Added(command) => {
-                            if index != done.len()
-                                || item.action.commands.len() != done.len()
-                                || done.last() == Some(&false)
-                            {
-                                return Err(invalid("shell command added out of order"));
-                            }
-                            item.action.commands.push(String::new());
-                            buffer.clone_from(command);
-                            command_stream.get_or_insert_with(Vec::new).push(false);
-                        }
-                        ShellCommandUpdate::Delta(delta) => {
-                            if done.get(index) != Some(&false) {
-                                return Err(invalid("shell command delta has no active command"));
-                            }
-                            buffer.push_str(delta);
-                        }
-                        ShellCommandUpdate::Done(command) => {
-                            if done.get(index) != Some(&false) || *buffer != *command {
-                                return Err(invalid(
-                                    "shell command done is repeated or contradicts streamed command",
-                                ));
-                            }
-                            item.apply_done(payload, buffer);
-                            command_stream.as_mut().expect("active command stream")[index] = true;
-                        }
-                    }
-                }
-            }
-            Self::Message { text, .. } => {
-                if let EventPayload::TextDelta { delta, .. } = payload {
-                    text.push_str(delta);
-                }
-            }
-            Self::Reasoning { item } => {
-                if matches!(
-                    payload,
-                    EventPayload::ReasoningTextDone { .. } | EventPayload::ReasoningSummaryTextDone { .. }
-                ) {
-                    item.apply_done(payload, &mut String::new());
-                }
-            }
-            Self::FunctionCall { item, arguments } => match payload {
-                EventPayload::FunctionCallArgsDelta { delta, .. } => arguments.push_str(delta),
-                EventPayload::FunctionCallArgsDone { .. } => item.apply_done(payload, arguments),
-                _ => {}
-            },
-            Self::CustomToolCall { item, input } => match payload {
-                EventPayload::CustomToolCallInputDelta { delta, .. } => input.push_str(delta),
-                EventPayload::CustomToolCallInputDone { .. } => item.apply_done(payload, input),
-                _ => {}
-            },
-            Self::ToolSearchCall { .. }
-            | Self::FileSearchCall { .. }
-            | Self::WebSearchCall { .. }
-            | Self::McpCall { .. }
-            | Self::McpListTools { .. }
-            | Self::Compaction { .. } => {}
-        }
-        Ok(())
-    }
-
-    pub(super) fn finalize(self) -> Option<OutputItem> {
-        match self {
-            Self::ShellCall { item, .. } => Some(OutputItem::ShellCall(item)),
-            Self::Reasoning { item } => Some(OutputItem::Reasoning(item)),
-            Self::FunctionCall { mut item, arguments } => {
-                if !arguments.is_empty() && item.arguments.is_empty() {
-                    item.arguments = arguments;
-                }
-                item.status = MessageStatus::Completed;
-                Some(OutputItem::FunctionCall(item))
-            }
-            Self::ToolSearchCall { item } => Some(OutputItem::ToolSearchCall(item)),
-            Self::Message { mut item, text } => {
-                if !text.is_empty() {
-                    item.content.push(OutputTextContent::new(text));
-                }
-                item.status = MessageStatus::Completed;
-                Some(OutputItem::Message(item))
-            }
-            Self::CustomToolCall { mut item, input } => {
-                if item.input.is_empty() {
-                    item.input = input;
-                }
-                item.status = Some(MessageStatus::Completed);
-                Some(OutputItem::CustomToolCall(item))
-            }
-            Self::FileSearchCall { item } => item.map(OutputItem::FileSearchCall),
-            Self::WebSearchCall { item } => item.map(OutputItem::WebSearchCall),
-            Self::McpCall { item } => Some(OutputItem::McpCall(item)),
-            Self::McpListTools { item } => Some(OutputItem::McpListTools(item)),
-            Self::Compaction { item } => Some(OutputItem::Compaction(item)),
-        }
-    }
-}
-
 #[derive(Debug)]
 pub(super) struct Slot {
     pub(super) item_id: Option<String>,
+    /// Observed event attribution, independent of embedded-item attribution.
+    /// An omitted agent is unspecified and must never become an implicit root.
+    event_agent: Option<AgentAttribution>,
     pub(super) state: SlotState,
+    /// Retained bytes charged for this slot so far.
+    pub(super) account: RetainedAccount,
 }
 
 /// A completed item owns no streaming buffers and cannot accept further deltas.
@@ -617,6 +419,24 @@ impl std::fmt::Debug for SlotState {
 }
 
 impl SlotState {
+    fn call_id(&self) -> Option<&str> {
+        match self {
+            Self::Active(ActiveItem::FunctionCall(call)) => Some(&call.item.call_id),
+            Self::Active(ActiveItem::CustomToolCall(call)) => Some(&call.item.call_id),
+            Self::Active(ActiveItem::ShellCall(call)) => Some(&call.item.call_id),
+            Self::Active(ActiveItem::ToolSearchCall { item }) => Some(&item.call_id),
+            Self::Done(item) => super::identity::output_item_call_id(item),
+            Self::Active(_) => None,
+        }
+    }
+
+    fn id(&self) -> Option<&str> {
+        match self {
+            Self::Active(item) => item.id(),
+            Self::Done(item) => item.id(),
+        }
+    }
+
     pub(super) fn item_type(&self) -> Option<SSEItemType> {
         match self {
             Self::Active(item) => Some(item.item_type()),
@@ -650,41 +470,7 @@ impl SlotState {
             Self::Active(item) => item.clone(),
             Self::Done(item) => ActiveItem::from_completed(item.clone())?,
         };
-        apply_output_item_done(&mut candidate, payload, done_item, item_id);
+        candidate.merge_completion(payload, done_item, item_id);
         candidate.finalize()
-    }
-}
-
-fn apply_output_item_done(
-    active: &mut ActiveItem,
-    payload: &EventPayload,
-    done_item: Option<&OutputItem>,
-    item_id: &str,
-) {
-    match (active, done_item) {
-        (ActiveItem::ShellCall { item, .. }, Some(OutputItem::ShellCall(done))) => item.merge_done(done, ()),
-        (ActiveItem::Message { item, text }, Some(OutputItem::Message(done))) => item.merge_done(done, text),
-        (ActiveItem::Reasoning { item }, Some(OutputItem::Reasoning(done))) => item.merge_done(done, payload),
-        (ActiveItem::FunctionCall { item, arguments }, Some(OutputItem::FunctionCall(done))) => {
-            item.merge_done(done, arguments);
-        }
-        (ActiveItem::ToolSearchCall { item }, Some(OutputItem::ToolSearchCall(done))) => item.merge_done(done, ()),
-        (ActiveItem::CustomToolCall { item, input }, Some(OutputItem::CustomToolCall(done))) => {
-            item.merge_done(done, input);
-        }
-        (ActiveItem::FileSearchCall { item }, Some(OutputItem::FileSearchCall(done))) => *item = Some(done.clone()),
-        (ActiveItem::WebSearchCall { item }, Some(OutputItem::WebSearchCall(done))) => item.merge_done(done, item_id),
-        (ActiveItem::McpCall { item }, Some(OutputItem::McpCall(done))) => item.merge_done(done, ()),
-        (ActiveItem::McpListTools { item }, Some(OutputItem::McpListTools(done))) => item.merge_done(done, ()),
-        (ActiveItem::Compaction { item }, Some(OutputItem::Compaction(done))) => item.merge_done(done, ()),
-        (ActiveItem::ShellCall { item, command, .. }, None) => item.apply_done(payload, command),
-        (ActiveItem::Reasoning { item }, None) => item.apply_done(payload, &mut String::new()),
-        (ActiveItem::FunctionCall { item, arguments }, None) => item.apply_done(payload, arguments),
-        (ActiveItem::ToolSearchCall { item }, None) => item.apply_done(payload, &mut String::new()),
-        (ActiveItem::CustomToolCall { item, input }, None) => item.apply_done(payload, input),
-        (ActiveItem::McpCall { item }, None) => item.apply_done(payload, &mut String::new()),
-        (ActiveItem::McpListTools { item }, None) => item.apply_done(payload, &mut String::new()),
-        (ActiveItem::Compaction { item }, None) => item.apply_done(payload, &mut String::new()),
-        _ => {}
     }
 }

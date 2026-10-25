@@ -1,4 +1,4 @@
-use axum::extract::{Request, State};
+use axum::extract::{Path, Request, State};
 use axum::http::request::Parts;
 use axum::response::{IntoResponse, Response};
 use bytes::Bytes;
@@ -8,17 +8,19 @@ use tracing::debug;
 
 use std::sync::Arc;
 
+use agentic_core::executor::telemetry::Api;
 use agentic_core::executor::{ExecuteRequest, compact_response as execute_compaction};
-use agentic_core::proxy::{ProxyRequest, proxy_request};
+use agentic_core::proxy::ProxyRequest;
 use agentic_core::tool::ToolSearchHandler;
-use agentic_core::types::request_response::{CompactRequest, RequestPayload, ResponseTextConfig};
+use agentic_core::types::request_response::{CompactRequest, PromptCacheOptions, RequestPayload, ResponseTextConfig};
 
 use super::super::common::{
     convert_response, executor_error_response, extract_bearer, read_bytes, read_json, sse_response,
 };
 use crate::app::AppState;
 
-type RoutingPayload = RequestPayload<RawValue>;
+// Only executor requests interpret text and prompt-cache options. Proxy requests retain their raw body.
+type RoutingPayload = RequestPayload<RawValue, Box<RawValue>>;
 
 async fn proxy_responses(state: &AppState, parts: Parts, body: Bytes) -> Response {
     let proxy_req = ProxyRequest {
@@ -26,7 +28,9 @@ async fn proxy_responses(state: &AppState, parts: Parts, body: Bytes) -> Respons
         body,
         query: parts.uri.query().map(str::to_string),
     };
-    convert_response(proxy_request(proxy_req, &state.proxy_state).await)
+    convert_response(
+        crate::telemetry::proxy::trace_proxy_request(Api::Responses, proxy_req, "/v1/responses", state).await,
+    )
 }
 
 async fn execute_responses(state: &AppState, parts: Parts, payload: RequestPayload) -> Response {
@@ -60,7 +64,7 @@ async fn execute_responses(state: &AppState, parts: Parts, payload: RequestPaylo
 ))]
 pub async fn responses(State(state): State<AppState>, req: Request) -> Response {
     let (parts, body) = req.into_parts();
-    let bytes = match read_bytes(body).await {
+    let bytes = match read_bytes(body, state.max_request_body_size).await {
         Ok(bytes) => bytes,
         Err(response) => return response,
     };
@@ -79,7 +83,7 @@ pub async fn responses(State(state): State<AppState>, req: Request) -> Response 
         store = routing_payload.store,
         stream = routing_payload.stream,
         has_previous_response_id = routing_payload.previous_response_id.is_some(),
-        has_conversation_id = routing_payload.conversation_id.is_some(),
+        has_conversation_id = routing_payload.conversation.is_some(),
         has_compaction = routing_payload.input.contains_compaction(),
         has_compaction_trigger = routing_payload.input.has_compaction_trigger(),
         has_tool_search_state,
@@ -89,13 +93,17 @@ pub async fn responses(State(state): State<AppState>, req: Request) -> Response 
     );
 
     if should_execute {
-        let payload = match routing_payload
-            .try_map_text(|text| serde_json::from_str::<ResponseTextConfig>(text.get()).map(Box::new))
-        {
+        let payload = match routing_payload.try_map_configs(
+            |text| serde_json::from_str::<ResponseTextConfig>(text.get()).map(Box::new),
+            |options| serde_json::from_str::<PromptCacheOptions>(options.get()),
+        ) {
             Ok(payload) => payload,
             Err(error) => return executor_error_response(error.into()),
         };
         execute_responses(&state, parts, payload).await
+    } else if let Err(error) = routing_payload.max_tool_calls_limit() {
+        // The executor validates its own requests; proxied ones are checked here.
+        executor_error_response(error.into())
     } else {
         proxy_responses(&state, parts, bytes).await
     }
@@ -115,13 +123,34 @@ pub async fn responses(State(state): State<AppState>, req: Request) -> Response 
 ))]
 pub async fn compact_response(State(state): State<AppState>, req: Request) -> Response {
     let (parts, body) = req.into_parts();
-    let request: CompactRequest = match read_json(body).await {
+    let request: CompactRequest = match read_json(body, state.max_request_body_size).await {
         Ok(request) => request,
         Err(response) => return response,
     };
     let auth = extract_bearer(&parts.headers, state.openai_api_key.as_deref());
     match execute_compaction(request, state.exec_ctx.as_ref(), auth.as_deref()).await {
         Ok(response) => axum::Json(response).into_response(),
+        Err(error) => executor_error_response(error),
+    }
+}
+
+/// Return a locally persisted Responses payload without invoking inference.
+#[cfg_attr(feature = "openapi", utoipa::path(
+    get,
+    path = "/v1/responses/{response_id}",
+    params(("response_id" = String, Path, description = "Stored response ID")),
+    responses(
+        (status = 200, description = "Stored response", body = agentic_core::types::request_response::ResponsePayload),
+        (status = 401, description = "Missing or invalid bearer token", body = crate::openapi::ApiErrorResponse),
+        (status = 404, description = "Response not found", body = crate::openapi::ApiErrorResponse),
+        (status = 409, description = "Legacy response has no retrievable payload", body = crate::openapi::ApiErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "responses",
+))]
+pub async fn retrieve_response(State(state): State<AppState>, Path(response_id): Path<String>) -> Response {
+    match state.exec_ctx.resp_handler.retrieve(&response_id).await {
+        Ok(payload) => axum::Json(payload).into_response(),
         Err(error) => executor_error_response(error),
     }
 }

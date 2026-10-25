@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Features } from '@/components/site/features';
 import { Quickstart } from '@/components/site/quickstart';
 import { Ecosystem } from '@/components/site/ecosystem';
+import { CommunityMeetingLinks } from '@/components/site/community-meeting-links';
 import community from '@/lib/data/community.json';
 import { REPO, SLACK, SLACK_CHANNEL, assetPath } from '@/lib/site';
 export default function Home() {
@@ -13,7 +14,7 @@ export default function Home() {
       <section className="hero container">
         <div className="hero-copy">
           <a className="eyebrow hero-eyebrow" href={REPO}>
-            <span className="status-dot" /> OPEN SOURCE. OPEN POSSIBILITIES.{' '}
+            <span className="status-dot" /> BUILT FOR AGENTIC INFERENCE{' '}
             <ArrowUpRight size={13} />
           </a>
           <h1>
@@ -27,8 +28,9 @@ export default function Home() {
             vLLM.
           </p>
           <p className="hero-detail">
-            Bring the tools you love to the open models you choose. We handle
-            the state, tools, and execution in between.
+            Everything you need for <strong>agentic inference</strong>:
+            conversation state, built-in tools, and multi-turn execution with
+            the open models you choose.
           </p>
           <div className="hero-actions">
             <a className="button primary" href="#get-started">
@@ -67,8 +69,9 @@ export default function Home() {
             Keep the agent going.
           </h2>
           <p>
-            vLLM serves the model. Agentic API carries the conversation forward,
-            executes built-in tools on the gateway, and connects every turn.
+            Agentic inference brings model calls, built-in tool execution, and
+            conversation state together. vLLM serves the model; Agentic API
+            coordinates the loop.
           </p>
         </div>
         <Features />
@@ -91,6 +94,7 @@ export default function Home() {
           <p className="slack-note">
             Join us in <a href={SLACK}>{SLACK_CHANNEL} on the vLLM Slack</a>.
           </p>
+          <CommunityMeetingLinks />
           <div className="hero-actions">
             <Link className="button secondary" href="/community/team">
               Meet the team <ArrowRight size={16} />

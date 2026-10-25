@@ -6,15 +6,13 @@ use bytes::Bytes;
 use http::HeaderMap;
 use tracing::debug;
 
+use agentic_core::executor::telemetry::Api;
 use agentic_core::executor::{
-    ExecutorError, MessagesRequestContext, MessagesUpstream, ParsedMessagesRequest,
-    normalize_native_web_search_for_upstream, run_messages_loop, run_messages_stream,
+    ExecutorError, MessagesRequestContext, MessagesUpstream, ParsedMessagesRequest, declares_native_web_fetch,
+    normalize_native_server_tools_for_upstream, run_messages_loop, run_messages_stream,
 };
-use agentic_core::proxy::{
-    ProxyAuth, ProxyRequest, error_response_for_auth, proxy_request_with_path, upstream_request_headers,
-};
-use agentic_core::tool::ToolRegistry;
-use agentic_core::types::messages::{has_gateway_tool, registry_tools};
+use agentic_core::proxy::{ProxyAuth, ProxyRequest, error_response_for_auth, upstream_request_headers};
+use agentic_core::tool::{ToolRegistry, registry_tools};
 
 use super::super::common::{
     convert_response, read_bytes_with_auth, sse_response_with_headers, upstream_error_response,
@@ -28,15 +26,15 @@ async fn proxy_messages(
     path: &'static str,
 ) -> Response {
     convert_response(
-        proxy_request_with_path(
+        crate::telemetry::proxy::trace_proxy_request(
+            Api::Messages,
             ProxyRequest {
                 headers: parts.headers,
                 body,
                 query: parts.uri.query().map(str::to_owned),
             },
             path,
-            ProxyAuth::Anthropic,
-            &state.proxy_state,
+            state,
         )
         .await,
     )
@@ -124,24 +122,25 @@ async fn execute_messages(
 ))]
 pub async fn messages(State(state): State<AppState>, request: Request) -> Response {
     let (parts, body) = request.into_parts();
-    let bytes: Bytes = match read_bytes_with_auth(body, ProxyAuth::Anthropic).await {
+    let bytes: Bytes = match read_bytes_with_auth(body, ProxyAuth::Anthropic, state.max_request_body_size).await {
         Ok(bytes) => bytes,
         Err(response) => return response,
     };
 
     // Route to the loop only when a gateway-owned tool is declared; everything
     // else keeps the transparent proxy path.
-    if let Ok(parsed) = ParsedMessagesRequest::parse(&bytes) {
-        let route_to_loop = has_gateway_tool(parsed.tools(), &state.exec_ctx.messages_gateway_tools);
-        debug!(
-            route = if route_to_loop { "messages_loop" } else { "proxy" },
-            stream = parsed.stream(),
-            tools = parsed.tools().map_or(0, Vec::len),
-            "routing HTTP messages request"
-        );
-        if route_to_loop {
+    match ParsedMessagesRequest::parse_for_gateway(&bytes, &state.exec_ctx.messages_gateway_tools) {
+        Ok(Some(parsed)) => {
+            debug!(
+                route = "messages_loop",
+                stream = parsed.stream(),
+                tools = parsed.tools().map_or(0, Vec::len),
+                "routing HTTP messages request"
+            );
             return execute_messages(&state, &parts.headers, parts.uri.query(), parsed).await;
         }
+        Err(error) => return messages_error_response(error),
+        Ok(None) => debug!(route = "proxy", "routing HTTP messages request"),
     }
 
     proxy_messages(&state, parts, bytes, "/v1/messages").await
@@ -161,12 +160,20 @@ pub async fn messages(State(state): State<AppState>, request: Request) -> Respon
 ))]
 pub async fn count_tokens(State(state): State<AppState>, request: Request) -> Response {
     let (parts, body) = request.into_parts();
-    let mut bytes: Bytes = match read_bytes_with_auth(body, ProxyAuth::Anthropic).await {
+    let mut bytes: Bytes = match read_bytes_with_auth(body, ProxyAuth::Anthropic, state.max_request_body_size).await {
         Ok(bytes) => bytes,
         Err(response) => return response,
     };
     if let Ok(mut request_json) = serde_json::from_slice::<serde_json::Value>(&bytes) {
-        match normalize_native_web_search_for_upstream(&mut request_json) {
+        // The executors own the availability policy: a disabled executor
+        // refuses the declaration here too, so counting tokens and sending the
+        // request answer alike.
+        if declares_native_web_fetch(&request_json)
+            && let Err(error) = state.exec_ctx.gateway_executors.require_web_fetch()
+        {
+            return messages_error_response(ExecutorError::from(error));
+        }
+        match normalize_native_server_tools_for_upstream(&mut request_json) {
             Ok(true) => match serde_json::to_vec(&request_json) {
                 Ok(body) => bytes = Bytes::from(body),
                 Err(error) => return messages_error_response(ExecutorError::from(error)),

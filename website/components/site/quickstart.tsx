@@ -1,13 +1,17 @@
 'use client';
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Check, Copy, Terminal, Code2, ArrowUpRight } from 'lucide-react';
+import { Check, Copy, ArrowUpRight } from 'lucide-react';
 import {
-  BUILD_COMMAND,
-  LAUNCH_COMMANDS,
+  DEFAULT_INSTALL_METHOD,
+  INSTALL_METHODS,
+  PUBLISHED_VERSION,
+  type InstallMethod,
+  isInstallMethod,
+  getLaunchCommands,
   getLaunchInstructions,
 } from '@/lib/quickstart';
-import { REPO } from '@/lib/site';
 type ModelContext = {
   registerTool: (
     tool: {
@@ -56,6 +60,10 @@ function CopyCode({ code, label }: { code: string; label: string }) {
   );
 }
 export function Quickstart() {
+  const [installation, setInstallation] = useState<InstallMethod>(
+    DEFAULT_INSTALL_METHOD,
+  );
+  const launchCommands = getLaunchCommands(installation);
   useEffect(() => {
     const context = (document as Document & { modelContext?: ModelContext })
       .modelContext;
@@ -67,12 +75,16 @@ export function Quickstart() {
           {
             name: 'get_launch_instructions',
             title: 'Get agent launch instructions',
-            description:
-              'Read the build and launch instructions displayed on this page for Codex or Claude Code with vLLM. Returns commands; does not run commands or change configuration.',
+            description: `Read installation and launch instructions for Codex or Claude Code with vLLM. Version ${PUBLISHED_VERSION} is available on crates.io and PyPI; defaults to crates.io. Returns commands; does not run commands or change configuration.`,
             inputSchema: {
               type: 'object',
               properties: {
                 harness: { type: 'string', enum: ['codex', 'claude'] },
+                installation: {
+                  type: 'string',
+                  enum: ['crates', 'pypi', 'source'],
+                  default: DEFAULT_INSTALL_METHOD,
+                },
               },
               required: ['harness'],
               additionalProperties: false,
@@ -116,10 +128,10 @@ export function Quickstart() {
             <li>
               <span>02</span>
               <div>
-                <strong>Build Agentic API</strong>
+                <strong>Get Agentic API</strong>
                 <p>
-                  Install Rust, clone the repository, and build the gateway and
-                  CLI.
+                  Run v{PUBLISHED_VERSION} from PyPI with uvx or install from
+                  crates.io, with source builds available for development.
                 </p>
               </div>
             </li>
@@ -134,9 +146,9 @@ export function Quickstart() {
               </div>
             </li>
           </ol>
-          <a className="text-link" href={`${REPO}#agentic-api-cli`}>
+          <Link className="text-link" href="/docs/latest/guides/quickstart">
             Read the full setup guide <ArrowUpRight size={16} />
-          </a>
+          </Link>
         </div>
         <div className="terminal-card">
           <div className="terminal-top">
@@ -148,29 +160,59 @@ export function Quickstart() {
             <span>QUICKSTART</span>
             <span>bash</span>
           </div>
-          <CopyCode code={BUILD_COMMAND} label="Build from source" />
-          <Tabs defaultValue="codex" className="launch-tabs">
+          <Tabs
+            value={installation}
+            onValueChange={(value) => {
+              if (isInstallMethod(value)) setInstallation(value);
+            }}
+            className="launch-tabs"
+          >
             <TabsList
-              className="launch-tab-list"
-              aria-label="Choose your coding agent"
+              className="launch-tab-list install-tab-list"
+              aria-label="Choose how to install Agentic API"
             >
-              <TabsTrigger value="codex">
-                <Terminal size={16} /> Codex
-              </TabsTrigger>
-              <TabsTrigger value="claude">
-                <Code2 size={16} /> Claude Code
-              </TabsTrigger>
+              {Object.entries(INSTALL_METHODS).map(([method, details]) => (
+                <TabsTrigger key={method} value={method}>
+                  {details.label}
+                </TabsTrigger>
+              ))}
             </TabsList>
-            <TabsContent value="codex">
-              <CopyCode code={LAUNCH_COMMANDS.codex} label="Launch Codex" />
-            </TabsContent>
-            <TabsContent value="claude">
-              <CopyCode
-                code={LAUNCH_COMMANDS.claude}
-                label="Launch Claude Code"
-              />
-            </TabsContent>
+            {Object.entries(INSTALL_METHODS).map(([method, details]) => (
+              <TabsContent key={method} value={method}>
+                <CopyCode
+                  code={details.command}
+                  label={
+                    method === 'source'
+                      ? 'Build from source'
+                      : method === 'pypi'
+                        ? `Check the PyPI CLI (v${PUBLISHED_VERSION})`
+                        : `Install from crates.io (v${PUBLISHED_VERSION})`
+                  }
+                />
+                <p className="install-note">{details.note}</p>
+              </TabsContent>
+            ))}
           </Tabs>
+          <p className="install-note">
+            Run either command to start Agentic API and launch the harness:
+          </p>
+          <CopyCode
+            key={installation + '-codex'}
+            code={launchCommands.codex}
+            label="Launch Codex CLI"
+          />
+          <CopyCode
+            key={installation + '-claude'}
+            code={launchCommands.claude}
+            label="Launch Claude Code"
+          />
+          <p className="install-note">
+            For the desktop app, see the{' '}
+            <Link href="/docs/latest/guides/codex-desktop">
+              Codex Desktop setup guide
+            </Link>
+            .
+          </p>
           <div className="terminal-note">
             <span />
             Use the model ID served by your vLLM instance.

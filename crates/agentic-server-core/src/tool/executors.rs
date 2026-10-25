@@ -3,17 +3,28 @@ use std::sync::Arc;
 
 use tokio::sync::RwLock;
 
+use super::code_interpreter::CodeInterpreterHandler;
+use super::declaration::ToolDeclaration;
 use super::file_search::handler::{FileSearchExecutor, FileSearchHandler};
 use super::mcp::handler::McpServerToolSet;
 use super::mcp::{McpClientPool, McpDiscoveredHandler, McpHandler};
+use super::normalize::code_interpreter_unavailable_error;
+use super::web_fetch::{WebFetchExecutor, WebFetchHandler};
 use super::web_search::{WebSearchExecutor, WebSearchHandler};
 use super::{GatewayExecutor, ToolError};
-use crate::config::ToolRuntimeConfig;
+use crate::config::{DEFAULT_MAX_CONCURRENT_GATEWAY_CALLS, ToolRuntimeConfig, WebFetchConfig};
 use crate::types::tools::McpToolParam;
+
+use super::code_interpreter::CodeInterpreterExecutor;
+
+/// The error for a native `web_fetch` declaration on a gateway whose operator
+/// disabled the executor.
+const WEB_FETCH_UNAVAILABLE: &str = "web_fetch is disabled by operator configuration";
 
 pub enum GatewayExecutorRegistration {
     WebSearch(Arc<WebSearchExecutor>),
     FileSearch(Arc<FileSearchExecutor>),
+    WebFetch(Arc<WebFetchExecutor>),
     Mcp {
         server_label: String,
         handlers: Vec<McpDiscoveredHandler>,
@@ -53,6 +64,10 @@ pub struct GatewayExecutors {
     web_search: Option<Arc<WebSearchExecutor>>,
     file_search: Option<Arc<FileSearchExecutor>>,
     pub(crate) include_file_search_results: bool,
+    /// Present unless the operator disabled the built-in `web_fetch` executor.
+    web_fetch: Option<Arc<WebFetchExecutor>>,
+    /// Present only after an opted-in provider passes startup readiness checks.
+    code_interpreter: Option<Arc<CodeInterpreterExecutor>>,
 }
 
 impl GatewayExecutors {
@@ -67,6 +82,11 @@ impl GatewayExecutors {
             mcp_discovered: Arc::new(RwLock::new(HashMap::new())),
             mcp_allowed_hosts: super::mcp::pool::allowed_hosts_from_env(),
             web_search: Some(Arc::new(WebSearchHandler::from_env(client))),
+            web_fetch: Some(Arc::new(WebFetchHandler::from_config(
+                &WebFetchConfig::default(),
+                DEFAULT_MAX_CONCURRENT_GATEWAY_CALLS,
+            ))),
+            code_interpreter: None,
         }
     }
 
@@ -80,6 +100,20 @@ impl GatewayExecutors {
     /// Invalid policy configuration is returned as an error. Connection and
     /// discovery happen when a configured server is requested.
     pub fn from_config(client: Arc<reqwest::Client>, config: &ToolRuntimeConfig) -> Result<Self, ToolError> {
+        config
+            .code_interpreter
+            .validate()
+            .map_err(|error| ToolError::Config(error.to_string()))?;
+        #[cfg(feature = "embedded-code-interpreter")]
+        let code_interpreter = config
+            .code_interpreter
+            .enabled
+            .then(|| CodeInterpreterExecutor::from_config(config.code_interpreter))
+            .transpose()
+            .map(|executor| executor.map(Arc::new))
+            .map_err(|error| ToolError::Config(error.to_string()))?;
+        #[cfg(not(feature = "embedded-code-interpreter"))]
+        let code_interpreter = None;
         let executors = Self {
             file_search: None,
             include_file_search_results: false,
@@ -92,12 +126,18 @@ impl GatewayExecutors {
             } else {
                 config.mcp_allowed_hosts.clone()
             },
-            web_search: Some(Arc::new(WebSearchHandler::from_values(
+            web_search: Some(Arc::new(WebSearchHandler::from_config(
                 client,
-                config.web_search.api_key.clone(),
-                config.web_search.base_url.clone(),
+                &config.web_search,
                 config.max_concurrent_gateway_calls,
             ))),
+            web_fetch: config.web_fetch.enabled.then(|| {
+                Arc::new(WebFetchHandler::from_config(
+                    &config.web_fetch,
+                    config.max_concurrent_gateway_calls,
+                )) as Arc<WebFetchExecutor>
+            }),
+            code_interpreter,
         };
         if config.mcp_servers.is_empty() {
             return Ok(executors);
@@ -118,6 +158,7 @@ impl GatewayExecutors {
         match registration.into() {
             GatewayExecutorRegistration::WebSearch(executor) => self.web_search = Some(executor),
             GatewayExecutorRegistration::FileSearch(executor) => self.file_search = Some(executor),
+            GatewayExecutorRegistration::WebFetch(executor) => self.web_fetch = Some(executor),
             GatewayExecutorRegistration::Mcp { server_label, handlers } => {
                 if handlers.is_empty() {
                     tracing::debug!(server_label, "empty MCP discovered handler registration skipped");
@@ -148,9 +189,61 @@ impl GatewayExecutors {
             .unwrap_or_else(|| Arc::new(FileSearchHandler::spec_only()))
     }
 
+    /// The `web_fetch` executor. The one owner of the availability policy: a
+    /// gateway whose operator disabled the executor refuses a native
+    /// declaration here, whether the caller is building a registry or counting
+    /// tokens.
+    ///
+    /// # Errors
+    ///
+    /// [`ToolError::Config`] when the operator disabled the executor.
+    pub fn require_web_fetch(&self) -> Result<Arc<WebFetchExecutor>, ToolError> {
+        self.web_fetch
+            .clone()
+            .ok_or_else(|| ToolError::Config(WEB_FETCH_UNAVAILABLE.to_owned()))
+    }
+
     #[must_use]
     pub(crate) fn request_scoped(&self) -> Self {
         self.clone()
+    }
+
+    /// Validates request declarations against the executors that actually
+    /// completed startup readiness checks.
+    ///
+    /// This runs before request state may be persisted, and again after
+    /// conversation settings are rehydrated, so an inherited declaration
+    /// cannot bypass operator gating.
+    pub(crate) fn validate_declarations(&self, tools: Option<&[ToolDeclaration]>) -> Result<(), ToolError> {
+        let Some(tools) = tools else {
+            return Ok(());
+        };
+        CodeInterpreterHandler::validate_declarations(tools)?;
+        for (index, tool) in tools.iter().enumerate() {
+            if tool.declares_unsupported_async() {
+                return Err(ToolError::UnknownParameter {
+                    param: format!("tools[{index}].async"),
+                });
+            }
+            tool.validate()?;
+        }
+        if tools
+            .iter()
+            .any(|tool| matches!(tool, ToolDeclaration::CodeInterpreter(_)))
+        {
+            let ready = self.code_interpreter.is_some();
+            if !ready {
+                return Err(code_interpreter_unavailable_error());
+            }
+        }
+        Ok(())
+    }
+
+    /// Return the shared, eagerly-ready code interpreter when an operator
+    /// enabled a registered provider.
+    #[must_use]
+    pub(crate) fn code_interpreter_executor(&self) -> Option<Arc<CodeInterpreterExecutor>> {
+        self.code_interpreter.clone()
     }
 
     /// Returns the discovered handlers for one request-declared MCP server.
@@ -316,7 +409,8 @@ fn validate_mcp_execution_options(param: &McpToolParam, configured_server: bool)
 
 impl std::fmt::Debug for GatewayExecutors {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("GatewayExecutors")
+        let mut debug = f.debug_struct("GatewayExecutors");
+        debug
             .field("mcp_server_handlers", &self.mcp.len())
             .field("mcp_server_configs", &self.mcp_configs.len())
             .field("mcp_clients", &Arc::strong_count(&self.mcp_clients))
@@ -324,197 +418,13 @@ impl std::fmt::Debug for GatewayExecutors {
             .field("mcp_allowed_hosts", &self.mcp_allowed_hosts)
             .field("web_search", &self.web_search.is_some())
             .field("file_search", &self.file_search.is_some())
-            .field("include_file_search_results", &self.include_file_search_results)
-            .finish()
+            .field("web_fetch", &self.web_fetch.is_some());
+        debug.field("file_search", &self.file_search.is_some());
+        debug.field("include_file_search_results", &self.include_file_search_results);
+        debug.field("code_interpreter", &self.code_interpreter.is_some());
+        debug.finish()
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use std::collections::HashMap;
-    use std::sync::Arc;
-
-    use super::{GatewayExecutorRegistration, GatewayExecutors, validate_mcp_execution_options};
-    use crate::config::ToolRuntimeConfig;
-    use crate::tool::mcp::McpServerEntry;
-    use crate::tool::mcp::{McpDiscoveredHandler, McpHandler};
-    use crate::types::tools::{McpDiscoveredToolParam, McpToolParam};
-
-    fn mcp_param(value: serde_json::Value) -> McpToolParam {
-        serde_json::from_value(value).unwrap()
-    }
-
-    fn discovered_handler(tool_name: &str) -> McpDiscoveredHandler {
-        McpDiscoveredHandler {
-            param: McpDiscoveredToolParam {
-                server_label: "counter".to_owned(),
-                tool_name: tool_name.to_owned(),
-                internal_name: format!("mcp__counter__{tool_name}"),
-                tool: serde_json::from_value(serde_json::json!({
-                    "name": tool_name,
-                    "inputSchema": {"type": "object"}
-                }))
-                .unwrap(),
-            },
-            handler: Arc::new(McpHandler::discovered_tool_spec_only()),
-        }
-    }
-
-    #[test]
-    fn mcp_execution_allows_explicit_never_approval_policy() {
-        let param = mcp_param(serde_json::json!({
-            "server_label": "counter",
-            "server_url": "http://localhost:8000/mcp",
-            "require_approval": "never"
-        }));
-
-        validate_mcp_execution_options(&param, false).unwrap();
-    }
-
-    #[test]
-    fn mcp_execution_uses_configured_never_approval_policy() {
-        let param = mcp_param(serde_json::json!({
-            "server_label": "counter"
-        }));
-
-        validate_mcp_execution_options(&param, true).unwrap();
-    }
-
-    #[test]
-    fn mcp_execution_rejects_omitted_approval_policy() {
-        let param = mcp_param(serde_json::json!({
-            "server_label": "counter",
-            "server_url": "http://localhost:8000/mcp"
-        }));
-
-        let error = validate_mcp_execution_options(&param, false).unwrap_err();
-        assert!(error.to_string().contains("gateway configuration or the request"));
-    }
-
-    #[test]
-    fn mcp_execution_rejects_unsupported_approval_policy() {
-        let param = mcp_param(serde_json::json!({
-            "server_label": "counter",
-            "server_url": "http://localhost:8000/mcp",
-            "require_approval": "always"
-        }));
-
-        let error = validate_mcp_execution_options(&param, false).unwrap_err();
-        assert!(error.to_string().contains("approval gating is not yet supported"));
-    }
-
-    #[test]
-    fn mcp_execution_rejects_connector_id() {
-        let param = mcp_param(serde_json::json!({
-            "server_label": "counter",
-            "connector_id": "connector_dropbox"
-        }));
-
-        let error = validate_mcp_execution_options(&param, false).unwrap_err();
-        assert!(error.to_string().contains("connector_id is not supported"));
-    }
-
-    #[tokio::test]
-    async fn configured_mcp_server_rejects_request_connection_override() {
-        let mut executors = GatewayExecutors::default();
-        executors.insert(GatewayExecutorRegistration::Mcp {
-            server_label: "counter".to_owned(),
-            handlers: vec![discovered_handler("read")],
-        });
-        let param = mcp_param(serde_json::json!({
-            "server_label": "counter",
-            "server_url": "http://localhost:8000/mcp",
-            "require_approval": "never"
-        }));
-
-        let Err(error) = executors.mcp_server_tools(&param).await else {
-            panic!("request connection override must fail");
-        };
-        assert!(error.to_string().contains("configured by the gateway"));
-        assert!(error.to_string().contains("omit server_url"));
-    }
-
-    #[tokio::test]
-    async fn unavailable_configured_mcp_server_does_not_block_startup() {
-        let mut servers = HashMap::new();
-        servers.insert(
-            "unavailable".to_owned(),
-            McpServerEntry::Http {
-                url: "http://127.0.0.1:1/mcp".to_owned(),
-                headers: None,
-                allowed_tools: Some(vec!["read".to_owned()]),
-                require_approval: Some("never".to_owned()),
-            },
-        );
-        let config = ToolRuntimeConfig {
-            mcp_servers: servers,
-            ..ToolRuntimeConfig::default()
-        };
-
-        let executors = GatewayExecutors::from_config(Arc::new(reqwest::Client::new()), &config);
-
-        assert!(executors.is_ok());
-    }
-
-    #[tokio::test]
-    async fn configured_allowed_tools_cannot_be_expanded_by_request() {
-        let mut executors = GatewayExecutors::default();
-        executors.insert(GatewayExecutorRegistration::Mcp {
-            server_label: "counter".to_owned(),
-            handlers: vec![discovered_handler("read")],
-        });
-        let param = mcp_param(serde_json::json!({
-            "server_label": "counter",
-            "allowed_tools": ["read", "delete"]
-        }));
-
-        let tools = executors.mcp_server_tools(&param).await.unwrap();
-
-        assert_eq!(tools.discovered_handlers.len(), 1);
-        assert_eq!(tools.discovered_handlers[0].param.tool_name, "read");
-    }
-
-    #[tokio::test]
-    async fn cached_mcp_server_tools_apply_request_allowed_tools_with_fresh_output_id() {
-        let mut executors = GatewayExecutors::default();
-        executors.insert(GatewayExecutorRegistration::Mcp {
-            server_label: "counter".to_owned(),
-            handlers: vec![discovered_handler("read"), discovered_handler("delete")],
-        });
-        let param = mcp_param(serde_json::json!({
-            "server_label": "counter",
-            "allowed_tools": ["read"],
-            "require_approval": "never"
-        }));
-
-        let first = executors.mcp_server_tools(&param).await.unwrap();
-        let first_output_id = first.list_tools_item.id.clone();
-        let second = executors.mcp_server_tools(&param).await.unwrap();
-
-        assert_eq!(first.discovered_handlers.len(), 1);
-        assert_eq!(first.discovered_handlers[0].param.tool_name, "read");
-        assert_eq!(first.list_tools_item.tools.len(), 1);
-        assert_eq!(first.list_tools_item.tools[0].name, "read");
-        assert_ne!(first_output_id, second.list_tools_item.id);
-    }
-
-    #[tokio::test]
-    async fn cached_mcp_handlers_reject_empty_final_allowed_set() {
-        let mut executors = GatewayExecutors::default();
-        executors.insert(GatewayExecutorRegistration::Mcp {
-            server_label: "counter".to_owned(),
-            handlers: vec![discovered_handler("delete")],
-        });
-        let param = mcp_param(serde_json::json!({
-            "server_label": "counter",
-            "allowed_tools": ["read"],
-            "require_approval": "never"
-        }));
-
-        let Err(error) = executors.mcp_server_tools(&param).await else {
-            panic!("expected empty allowed set to be rejected");
-        };
-
-        assert!(error.to_string().contains("empty final allowed tool set"));
-    }
-}
+mod tests;

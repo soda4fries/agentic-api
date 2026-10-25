@@ -5,8 +5,9 @@ use agentic_core::storage::ResponseMetadata;
 use agentic_core::storage::{
     ConversationStore, ResponseStore, create_pool_with_schema, create_pool_with_schema_and_sqlite_config,
 };
-use agentic_core::storage::{ConversationVersion, InOutItem, StorageError};
+use agentic_core::storage::{ConversationVersion, StorageError};
 use agentic_core::types::event::MessageStatus;
+use agentic_core::types::io::InOutItem;
 use agentic_core::types::io::{InputItem, InputMessage, InputMessageContent, OutputItem, OutputMessage};
 use std::sync::Arc;
 
@@ -14,10 +15,9 @@ use support::setup_pool;
 
 fn create_input_item(text: &str) -> InOutItem {
     InOutItem::Input(InputItem::Message(InputMessage {
-        id: None,
         role: "user".to_string(),
-        status: None,
         content: InputMessageContent::Text(text.to_string()),
+        ..Default::default()
     }))
 }
 
@@ -68,7 +68,7 @@ async fn conversation_snapshot_reports_empty_and_last_response() -> Result<(), B
 
     let snapshot = store.rehydrate_snapshot(&conversation.conversation_id).await?;
     assert!(snapshot.items.is_empty());
-    assert_eq!(snapshot.version, ConversationVersion::Empty);
+    assert_eq!(snapshot.version, ConversationVersion::default());
 
     store
         .persist(
@@ -84,8 +84,9 @@ async fn conversation_snapshot_reports_empty_and_last_response() -> Result<(), B
     assert_eq!(snapshot.items.len(), 2);
     assert_eq!(
         snapshot.version,
-        ConversationVersion::LastResponse {
-            response_id: "resp_1".to_owned(),
+        ConversationVersion {
+            response_id: Some("resp_1".to_owned()),
+            revision: 1,
             last_sequence: Some(1),
         }
     );
@@ -95,7 +96,7 @@ async fn conversation_snapshot_reports_empty_and_last_response() -> Result<(), B
 }
 
 #[tokio::test]
-async fn conversation_snapshot_version_includes_an_undecodable_final_row() -> Result<(), Box<dyn std::error::Error>> {
+async fn conversation_snapshot_rejects_an_undecodable_final_row() -> Result<(), Box<dyn std::error::Error>> {
     let pool = setup_pool().await;
     let store = ConversationStore::new(Arc::clone(&pool));
     let conversation = store.create().await?;
@@ -119,16 +120,12 @@ async fn conversation_snapshot_version_includes_an_undecodable_final_row() -> Re
         .execute(pool.as_ref())
         .await?;
 
-    let snapshot = store.rehydrate_snapshot(&conversation.conversation_id).await?;
-
-    assert_eq!(snapshot.items, vec![stored_item]);
-    assert_eq!(
-        snapshot.version,
-        ConversationVersion::LastResponse {
-            response_id: "resp_1".to_owned(),
-            last_sequence: Some(1),
-        }
-    );
+    let error = store
+        .rehydrate_snapshot(&conversation.conversation_id)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, StorageError::InvalidHistoryItem { ref item_id } if item_id == "item_undecodable"));
+    assert!(!error.to_string().contains("not valid JSON"));
 
     Ok(())
 }
@@ -189,7 +186,13 @@ async fn legacy_item_only_version_upgrades_on_the_next_persist() -> Result<(), B
         .await?;
 
     let legacy = store.rehydrate_snapshot(&conversation.conversation_id).await?;
-    assert_eq!(legacy.version, ConversationVersion::LastSequence(0));
+    assert_eq!(
+        legacy.version,
+        ConversationVersion {
+            last_sequence: Some(0),
+            ..ConversationVersion::default()
+        }
+    );
 
     store
         .persist_if_version(
@@ -204,8 +207,9 @@ async fn legacy_item_only_version_upgrades_on_the_next_persist() -> Result<(), B
     let upgraded = store.rehydrate_snapshot(&conversation.conversation_id).await?;
     assert_eq!(
         upgraded.version,
-        ConversationVersion::LastResponse {
-            response_id: "resp_after_legacy".to_owned(),
+        ConversationVersion {
+            response_id: Some("resp_after_legacy".to_owned()),
+            revision: 1,
             last_sequence: Some(0),
         }
     );
@@ -223,7 +227,7 @@ async fn conversation_version_empty_checked_persist_succeeds() -> Result<(), Box
     store
         .persist_if_version(
             &conversation.conversation_id,
-            ConversationVersion::Empty,
+            ConversationVersion::default(),
             "resp_first",
             None,
             items.clone(),
@@ -235,8 +239,9 @@ async fn conversation_version_empty_checked_persist_succeeds() -> Result<(), Box
     assert_eq!(snapshot.items, items);
     assert_eq!(
         snapshot.version,
-        ConversationVersion::LastResponse {
-            response_id: "resp_first".to_owned(),
+        ConversationVersion {
+            response_id: Some("resp_first".to_owned()),
+            revision: 1,
             last_sequence: Some(1),
         }
     );
@@ -252,6 +257,7 @@ async fn zero_item_turn_advances_version_and_retains_exact_metadata() -> Result<
     let conversation = store.create().await?;
     let empty = store.rehydrate_snapshot(&conversation.conversation_id).await?;
     let first_metadata = ResponseMetadata {
+        multi_agent_tree: None,
         model: "first-zero-item-turn".to_owned(),
         ..ResponseMetadata::default()
     };
@@ -271,8 +277,9 @@ async fn zero_item_turn_advances_version_and_retains_exact_metadata() -> Result<
     assert!(first.items.is_empty());
     assert_eq!(
         first.version,
-        ConversationVersion::LastResponse {
-            response_id: "resp_zero_items_first".to_owned(),
+        ConversationVersion {
+            response_id: Some("resp_zero_items_first".to_owned()),
+            revision: 1,
             last_sequence: None,
         }
     );
@@ -293,6 +300,7 @@ async fn zero_item_turn_advances_version_and_retains_exact_metadata() -> Result<
             None,
             Vec::new(),
             &ResponseMetadata {
+                multi_agent_tree: None,
                 model: "second-zero-item-turn".to_owned(),
                 ..ResponseMetadata::default()
             },
@@ -487,7 +495,7 @@ async fn conversation_version_is_scoped_per_conversation() -> Result<(), Box<dyn
     store
         .persist_if_version(
             &second.conversation_id,
-            ConversationVersion::Empty,
+            ConversationVersion::default(),
             "resp_second_conversation",
             None,
             vec![create_input_item("second conversation")],
@@ -571,6 +579,76 @@ async fn test_response_store_get() {
 
     assert_eq!(response.response_id, "resp_get_test");
     assert_eq!(response.history_item_ids.len(), 1);
+}
+
+#[tokio::test]
+async fn response_rehydration_rejects_invalid_or_missing_history() -> Result<(), Box<dyn std::error::Error>> {
+    let pool = setup_pool().await;
+    let store = ResponseStore::new(Arc::clone(&pool));
+    store
+        .persist(
+            "resp_corrupt",
+            None,
+            vec![create_input_item("query")],
+            &ResponseMetadata::default(),
+        )
+        .await?;
+    let item_id = store.get("resp_corrupt").await?.history_item_ids.remove(0);
+
+    // Reasoning that even the legacy projection cannot read fails closed, not silently.
+    let malformed = serde_json::json!({
+        "type": "reasoning", "id": "rs_1", "content": [{"type": "reasoning_text", "text": 42}],
+        "encrypted_content": {"ciphertext": "sensitive-state"}
+    })
+    .to_string();
+    sqlx::query("UPDATE items SET data = $1 WHERE id = $2")
+        .bind(malformed)
+        .bind(&item_id)
+        .execute(pool.as_ref())
+        .await?;
+    let error = store.rehydrate("resp_corrupt").await.unwrap_err();
+    assert!(matches!(error, StorageError::InvalidHistoryItem { item_id: ref invalid } if invalid == &item_id));
+    assert!(!error.to_string().contains("sensitive-state"));
+
+    sqlx::query("DELETE FROM items WHERE id = $1")
+        .bind(&item_id)
+        .execute(pool.as_ref())
+        .await?;
+    let error = store.rehydrate("resp_corrupt").await.unwrap_err();
+    assert!(matches!(error, StorageError::InvalidHistoryItem { item_id: missing } if missing == item_id));
+    Ok(())
+}
+
+#[tokio::test]
+async fn conversation_rehydration_rejects_invalid_reasoning() -> Result<(), Box<dyn std::error::Error>> {
+    let pool = setup_pool().await;
+    let store = ConversationStore::new(Arc::clone(&pool));
+    let conversation = store.create().await?;
+    store
+        .persist(
+            &conversation.conversation_id,
+            "resp_corrupt",
+            None,
+            vec![create_input_item("query")],
+            &ResponseMetadata::default(),
+        )
+        .await?;
+    let malformed = serde_json::json!({
+        "type": "reasoning", "id": "rs_1", "summary": "sensitive-state"
+    })
+    .to_string();
+    sqlx::query("UPDATE items SET data = $1 WHERE conversation_id = $2")
+        .bind(malformed)
+        .bind(&conversation.conversation_id)
+        .execute(pool.as_ref())
+        .await?;
+    let error = store
+        .rehydrate_snapshot(&conversation.conversation_id)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, StorageError::InvalidHistoryItem { .. }));
+    assert!(!error.to_string().contains("sensitive-state"));
+    Ok(())
 }
 
 #[tokio::test]
@@ -1150,12 +1228,14 @@ async fn test_tool_search_conversation_conflict_does_not_persist_stale_loaded_st
     }))
     .expect("stale tool");
     let winning = ResponseMetadata {
+        multi_agent_tree: None,
         model: "winner".to_owned(),
         effective_tools: Some(vec![winning_tool.clone()]),
         tool_search_loaded_tools: Some(vec![winning_tool]),
         ..ResponseMetadata::default()
     };
     let stale = ResponseMetadata {
+        multi_agent_tree: None,
         model: "stale".to_owned(),
         effective_tools: Some(vec![stale_tool.clone()]),
         tool_search_loaded_tools: Some(vec![stale_tool]),

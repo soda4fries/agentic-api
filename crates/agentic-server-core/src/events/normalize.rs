@@ -2,7 +2,7 @@ use serde_json::Value;
 
 use super::types::{EventFrame, EventPayload, SSEEventType, SSEItemType, ShellCommandUpdate, WireEvent};
 use super::{ClassifiedSseLine, SseLine};
-use crate::types::io::OutputItem;
+use crate::types::io::{AgentMessageContent, OutputItem};
 use crate::utils::common::{deserialize_from_str_opt, deserialize_from_value_opt};
 
 /// Normalize a raw SSE data line into a typed [`EventFrame`].
@@ -24,7 +24,7 @@ pub fn normalize_sse_line(line: &str) -> Option<EventFrame> {
 pub(crate) struct InvalidOutputIndex;
 
 /// Shares normalization with the public adapter while preserving invalid-index
-/// errors for ingestion. Malformed JSON remains a policy decision downstream.
+/// errors for ingestion. Malformed frames remain a policy decision downstream.
 pub(crate) fn normalize_sse_data_checked(data: &SseLine) -> Result<Option<EventFrame>, InvalidOutputIndex> {
     let Some(json) = deserialize_from_str_opt::<Value>(data.as_str()) else {
         return Ok(None);
@@ -33,17 +33,25 @@ pub(crate) fn normalize_sse_data_checked(data: &SseLine) -> Result<Option<EventF
 }
 
 /// Normalizes an already parsed SSE payload.
-fn normalize_sse_value(json: Value) -> Result<Option<EventFrame>, InvalidOutputIndex> {
+fn normalize_sse_value(mut json: Value) -> Result<Option<EventFrame>, InvalidOutputIndex> {
     if let Some(index) = json.get("output_index") {
         index
             .as_u64()
             .and_then(|index| u32::try_from(index).ok())
             .ok_or(InvalidOutputIndex)?;
     }
-    let event_type = json
+    let mut event_type = json
         .get("type")
         .and_then(Value::as_str)
         .map_or(SSEEventType::Other, SSEEventType::from);
+
+    // vLLM can emit a completion event even when its response ran out of tokens.
+    // Reconcile the explicit status before validation, accumulation, and delivery
+    // so all consumers retain the same incomplete outcome and terminal details.
+    if event_type == SSEEventType::ResponseCompleted && json["response"]["status"] == "incomplete" {
+        event_type = SSEEventType::ResponseIncomplete;
+        json["type"] = Value::String("response.incomplete".to_owned());
+    }
 
     let payload = extract_payload(event_type, &json);
     let Some(wire) = deserialize_from_value_opt::<WireEvent>(json) else {
@@ -65,6 +73,11 @@ fn extract_payload(event_type: SSEEventType, json: &Value) -> EventPayload {
         | SSEEventType::ResponseFailed
         | SSEEventType::ResponseIncomplete => extract_response_payload(json),
 
+        SSEEventType::Keepalive
+        | SSEEventType::ResponseSteerAccepted
+        | SSEEventType::ResponseSteerPending
+        | SSEEventType::ResponseSteerFailed => EventPayload::None,
+
         SSEEventType::OutputItemAdded => extract_output_item_added(json),
         SSEEventType::OutputItemDone => extract_output_item_done(json),
 
@@ -84,8 +97,9 @@ fn extract_payload(event_type: SSEEventType, json: &Value) -> EventPayload {
         SSEEventType::ReasoningSummaryTextDelta => extract_reasoning_summary_text_delta(json),
         SSEEventType::ReasoningSummaryTextDone => extract_reasoning_summary_text_done(json),
 
+        SSEEventType::ContentPartDone => extract_content_part_done(json),
+
         SSEEventType::ContentPartAdded
-        | SSEEventType::ContentPartDone
         | SSEEventType::ReasoningPartAdded
         | SSEEventType::ReasoningPartDone
         | SSEEventType::FileSearchCallInProgress
@@ -94,6 +108,11 @@ fn extract_payload(event_type: SSEEventType, json: &Value) -> EventPayload {
         | SSEEventType::WebSearchCallInProgress
         | SSEEventType::WebSearchCallSearching
         | SSEEventType::WebSearchCallCompleted
+        | SSEEventType::CodeInterpreterCallInProgress
+        | SSEEventType::CodeInterpreterCallCodeDelta
+        | SSEEventType::CodeInterpreterCallCodeDone
+        | SSEEventType::CodeInterpreterCallInterpreting
+        | SSEEventType::CodeInterpreterCallCompleted
         | SSEEventType::McpCallInProgress
         | SSEEventType::McpCallArgumentsDelta
         | SSEEventType::McpCallArgumentsDone
@@ -142,6 +161,7 @@ fn extract_response_payload(json: &Value) -> EventPayload {
             .get("usage")
             .filter(|v| !v.is_null())
             .and_then(|v| deserialize_from_value_opt(v.clone())),
+        service_tier: json_str_opt(response, "service_tier"),
     }
 }
 
@@ -154,11 +174,18 @@ fn extract_output_item_added(json: &Value) -> EventPayload {
         name: json_str_opt(item, "name"),
         namespace: json_str_opt(item, "namespace"),
         call_id: json_str_opt(item, "call_id"),
-        shell_call: if item["type"] == "shell_call" {
-            match deserialize_from_value_opt::<OutputItem>(item.clone()) {
-                Some(OutputItem::ShellCall(call)) => Some(Box::new(call)),
-                _ => None,
-            }
+        initial_item: if matches!(
+            item["type"].as_str(),
+            Some(
+                "message"
+                    | "function_call"
+                    | "shell_call"
+                    | "multi_agent_call"
+                    | "multi_agent_call_output"
+                    | "agent_message"
+            )
+        ) {
+            deserialize_from_value_opt::<OutputItem>(item.clone()).map(Box::new)
         } else {
             None
         },
@@ -168,10 +195,11 @@ fn extract_output_item_added(json: &Value) -> EventPayload {
 fn extract_output_item_done(json: &Value) -> EventPayload {
     let mut item = json["item"].clone();
     let item_id = output_item_id(&item);
-    if !item_id.is_empty() && item["id"].as_str().is_none_or(str::is_empty) {
-        if let Some(item) = item.as_object_mut() {
-            item.insert("id".to_owned(), Value::String(item_id.clone()));
-        }
+    if !item_id.is_empty()
+        && item["id"].as_str().is_none_or(str::is_empty)
+        && let Some(item) = item.as_object_mut()
+    {
+        item.insert("id".to_owned(), Value::String(item_id.clone()));
     }
     EventPayload::OutputItemDone {
         item_id,
@@ -179,6 +207,24 @@ fn extract_output_item_done(json: &Value) -> EventPayload {
         output_index: json_output_index(json),
         item,
     }
+}
+
+fn extract_content_part_done(json: &Value) -> EventPayload {
+    let Some(content_index) = json["content_index"]
+        .as_u64()
+        .and_then(|index| u32::try_from(index).ok())
+    else {
+        return EventPayload::Raw(json.clone());
+    };
+    if let Some(part) = deserialize_from_value_opt::<AgentMessageContent>(json["part"].clone()) {
+        return EventPayload::ContentPartDone {
+            item_id: json_str(json, "item_id"),
+            output_index: json_output_index(json),
+            content_index,
+            part,
+        };
+    }
+    EventPayload::Raw(json.clone())
 }
 
 fn extract_text_delta(json: &Value) -> EventPayload {
@@ -190,11 +236,14 @@ fn extract_text_delta(json: &Value) -> EventPayload {
     }
 }
 
+// Note: If upstream omits `content_index`, `json_u32` defaults to index 0,
+// matching the standard single-part message contract.
 fn extract_text_done(json: &Value) -> EventPayload {
     EventPayload::TextDone {
         text: json_str(json, "text"),
         item_id: json_str(json, "item_id"),
         output_index: json_output_index(json),
+        content_index: json_u32(json, "content_index"),
     }
 }
 

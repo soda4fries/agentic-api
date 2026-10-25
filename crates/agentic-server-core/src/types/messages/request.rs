@@ -11,6 +11,8 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use super::tool_choice::MessagesToolChoice;
+
 /// Top-level Anthropic Messages request body.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -23,7 +25,7 @@ pub struct MessagesRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<ToolParam>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tool_choice: Option<Value>,
+    pub tool_choice: Option<MessagesToolChoice>,
     #[serde(default)]
     pub stream: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -36,6 +38,14 @@ pub struct MessagesRequest {
     /// Any other top-level field (e.g. `metadata`, `stop_sequences`) preserved verbatim.
     #[serde(flatten)]
     pub extra: HashMap<String, Value>,
+}
+
+/// Routing view used when a full request fails validation. A malformed request
+/// declaring a gateway tool must not escape validation through the proxy path.
+#[derive(Deserialize)]
+pub(crate) struct MessagesToolDeclarations {
+    #[serde(default)]
+    pub tools: Option<Vec<ToolParam>>,
 }
 
 /// Anthropic `output_config` object. Unmodeled keys are preserved via `extra`.
@@ -70,6 +80,26 @@ pub enum ReasoningEffortLevel {
     High,
     Xhigh,
     Max,
+}
+
+impl ReasoningEffortLevel {
+    /// The wire spelling of this level, matching its serialized form.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+            Self::Xhigh => "xhigh",
+            Self::Max => "max",
+        }
+    }
+}
+
+impl std::fmt::Display for ReasoningEffortLevel {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
 }
 
 #[cfg(feature = "openapi")]
@@ -358,22 +388,8 @@ pub struct ToolResultBlock {
     pub text: Option<String>,
 }
 
-/// A tool declared in the request. Anthropic's shape is `{name, description,
-/// input_schema}`; server tools may additionally carry a versioned `type`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct ToolParam {
-    pub name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub input_schema: Option<Value>,
-    /// Anthropic server tools carry a versioned `type` (e.g. `web_search_20250305`).
-    #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
-    pub type_: Option<String>,
-    #[serde(flatten)]
-    pub extra: HashMap<String, Value>,
-}
+// Preserve the existing import path for callers of the Messages wire types.
+pub use super::tools::ToolParam;
 
 #[cfg(test)]
 mod effort_tests {

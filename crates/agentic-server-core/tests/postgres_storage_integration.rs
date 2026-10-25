@@ -3,19 +3,19 @@ use std::time::Duration;
 
 use agentic_core::config::{PostgresConfig, SqliteConfig};
 use agentic_core::storage::{
-    ConversationStore, InOutItem, ResponseMetadata, ResponseStore, StorageError, create_pool_with_configs,
+    ConversationStore, ResponseMetadata, ResponseStore, StorageError, create_pool_with_configs,
     create_pool_with_schema_and_configs,
 };
+use agentic_core::types::io::InOutItem;
 use agentic_core::types::io::{InputItem, InputMessage, InputMessageContent};
 use tokio::sync::Barrier;
 use tokio::time::timeout;
 
 fn input_item(text: &str) -> InOutItem {
     InOutItem::Input(InputItem::Message(InputMessage {
-        id: None,
         role: "user".to_owned(),
-        status: None,
         content: InputMessageContent::Text(text.to_owned()),
+        ..Default::default()
     }))
 }
 

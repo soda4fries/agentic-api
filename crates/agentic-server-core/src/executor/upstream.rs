@@ -1,16 +1,16 @@
 use crate::executor::accumulator::Validation;
 use crate::executor::error::{ExecutorError, ExecutorResult};
-use crate::executor::gateway_accumulator::StreamEvent;
-use crate::executor::inference::{call_inference, fetch_response_json};
-use crate::executor::pipeline::{AgentPipeline, StreamPayload};
-use crate::executor::rehydrate::validate_message_files;
+use crate::executor::inference::{call_inference_limited, fetch_response_json_limited};
+use crate::executor::multi_agent::collaboration;
+use crate::executor::pipeline::AgentPipeline;
+use crate::executor::relay::StreamRelay;
 use crate::executor::request::{ExecutionContext, RequestContext};
 use crate::executor::response_budget::ExecutorResponseBudget;
 use crate::executor::translate::TranslationContext;
 use crate::tool::{ToolRegistry, ToolSearchState};
-use crate::types::request_response::ResponsePayload;
+use crate::types::io::{InputItem, InputMessage, MultiAgentAction};
+use crate::types::request_response::{ResponsePayload, UpstreamTool};
 use crate::utils::common::serialize_to_string;
-use futures::StreamExt;
 use std::sync::Arc;
 
 /// Snapshot tool facts at the orchestration boundary, excluding all execution bindings.
@@ -27,6 +27,15 @@ fn translation_context(registry: &ToolRegistry, agent: &AgentPipeline) -> Transl
         state.is_some_and(ToolSearchState::is_active),
     )
     .with_file_search_context(&agent.request.enriched_request.input)
+    .with_file_search_context(&agent.request.enriched_request.input)
+    .with_collaboration(
+        agent
+            .request
+            .enriched_request
+            .multi_agent
+            .as_ref()
+            .is_some_and(|config| config.enabled),
+    )
     .with_gateway_owned_names(
         registry
             .tool_classifications()
@@ -34,48 +43,70 @@ fn translation_context(registry: &ToolRegistry, agent: &AgentPipeline) -> Transl
             .map(|(name, _)| name.to_owned())
             .collect(),
     )
+    .with_async_tool_names(registry.async_tool_names().map(str::to_owned).collect())
     .with_response_metadata(
         registry.namespace_map().cloned(),
         registry.custom_tool_map().cloned(),
         state
             .filter(|state| state.is_active())
-            .map(crate::tool::ToolSearchState::public_response_tools)
+            .map(ToolSearchState::public_response_tools)
             .or_else(|| {
-                agent
-                    .request
-                    .enriched_request
-                    .tools
-                    .as_ref()
-                    .filter(|tools| {
-                        tools
-                            .iter()
-                            .any(|tool| matches!(tool, crate::types::tools::ResponsesTool::Shell(_)))
-                    })
-                    .cloned()
+                // Use the resolved declarations, including inherited tools when the client
+                // omitted `tools`. Lowering creates separate UpstreamRequest schemas;
+                // response metadata sanitization removes private MCP discovery/auth fields.
+                agent.request.enriched_request.tools.clone()
             }),
-        agent.request.enriched_request.tool_choice.clone(),
+        agent.request.public_tool_choice().cloned(),
     )
+    .with_request_fields(&agent.request.original_request)
 }
 
 /// Builds the JSON body sent upstream: history inlined, continuation and storage
 /// fields removed.
 ///
 /// # Errors
-/// Unsupported message files, a tool-configuration error, or a serialization failure.
+/// Unsupported message content, a tool-configuration error, or a serialization failure.
 pub fn upstream_request(ctx: &RequestContext, stream: bool) -> ExecutorResult<String> {
-    // Composable callers may supply RequestContext without the rehydration step.
-    validate_message_files(&ctx.enriched_request.input)?;
-    let request = ctx.enriched_request.to_upstream_request(stream)?;
-    serialize_to_string(&request).map_err(ExecutorError::JsonError)
+    upstream_request_with_guidance(ctx, stream, None, None)
 }
 
-/// One pipeline per response sender; collect-only and JSON requests have no sender.
-pub(super) fn agent_pipeline(
-    ctx: RequestContext,
-    tool_search_state: Option<ToolSearchState>,
-    sender: Option<tokio::sync::mpsc::Sender<StreamEvent>>,
-) -> AgentPipeline {
-    AgentPipeline::new(ctx, tool_search_state, sender)
+/// `withheld` names the registry whose gateway-executed tools are left out
+/// after a `max_tool_calls` refusal, without changing the persisted tools.
+fn upstream_request_with_guidance(
+    ctx: &RequestContext,
+    stream: bool,
+    guidance: Option<&InputMessage>,
+    withheld: Option<&ToolRegistry>,
+) -> ExecutorResult<String> {
+    let mut request = ctx.enriched_request.to_upstream_request(stream)?;
+    if let Some(registry) = withheld {
+        if let Some(tools) = request.tools.as_mut() {
+            tools.retain(|UpstreamTool::Function(function)| !registry.is_gateway_owned_name(&function.name));
+        }
+        request.tools = request.tools.filter(|tools| !tools.is_empty());
+    }
+    if ctx
+        .enriched_request
+        .multi_agent
+        .as_ref()
+        .is_some_and(|config| config.enabled)
+    {
+        let tools = request.tools.get_or_insert_with(Vec::new);
+        for tool in tools.iter() {
+            let UpstreamTool::Function(function) = tool;
+            if MultiAgentAction::from_tool_name(&function.name).is_some() {
+                return Err(ExecutorError::InvalidRequest(format!(
+                    "tool name '{}' is reserved for multi-agent collaboration",
+                    function.name
+                )));
+            }
+        }
+        tools.extend(collaboration::tools());
+    }
+    if let Some(guidance) = guidance {
+        request.input.to_mut().push(InputItem::Message(guidance.clone()));
+    }
+    serialize_to_string(&request).map_err(ExecutorError::JsonError)
 }
 
 pub(super) async fn fetch_blocking_payload(
@@ -86,12 +117,22 @@ pub(super) async fn fetch_blocking_payload(
     response_budget: Option<&ExecutorResponseBudget>,
 ) -> ExecutorResult<ResponsePayload> {
     agent.ensure_request_prepared()?;
-    let upstream_json = upstream_request(&agent.request, false)?;
-    let body = fetch_response_json(upstream_json, &exec_ctx.responses_url(), &exec_ctx.client, auth).await?;
-    if let Some(response_budget) = response_budget {
-        response_budget.consume(body.len())?;
-    }
-    agent.run_with_json_body(&body, Validation::Lenient, translation_context(registry, agent))
+    let withheld = agent.builtin_tools_withheld().then_some(registry);
+    let upstream_json = upstream_request_with_guidance(&agent.request, false, agent.agent_guidance(), withheld)?;
+    let body = fetch_response_json_limited(
+        upstream_json,
+        &exec_ctx.responses_url(),
+        &exec_ctx.client,
+        auth,
+        exec_ctx.responses_config.max_upstream_json_bytes,
+    )
+    .await?;
+    agent.run_with_json_body(
+        &body,
+        Validation::Lenient,
+        translation_context(registry, agent),
+        response_budget.cloned(),
+    )
 }
 
 /// A complete upstream response, in whichever form the caller received it.
@@ -110,10 +151,10 @@ pub async fn decode_upstream(
     ctx: RequestContext,
     body: UpstreamBody<'_>,
 ) -> ExecutorResult<(ResponsePayload, RequestContext)> {
-    let mut agent = agent_pipeline(ctx, None, None);
+    let mut agent = AgentPipeline::new(ctx, None, StreamRelay::detached());
     let payload = match body {
         UpstreamBody::Json(body) => {
-            agent.run_with_json_body(body, Validation::Strict, TranslationContext::default())?
+            agent.run_with_json_body(body, Validation::Strict, TranslationContext::default(), None)?
         }
         UpstreamBody::Sse(body) => {
             let lines = futures::stream::iter(body.lines().map(|line| Ok(line.to_owned())));
@@ -124,9 +165,9 @@ pub async fn decode_upstream(
                     TranslationContext::default(),
                     &ToolRegistry::default(),
                     0,
+                    None,
                 )
                 .await?
-                .payload
         }
     };
     let (ctx, _) = agent.into_parts();
@@ -140,21 +181,18 @@ pub(super) async fn fetch_stream_payload(
     registry: &ToolRegistry,
     output_offset: usize,
     response_budget: &ExecutorResponseBudget,
-) -> ExecutorResult<StreamPayload> {
+) -> ExecutorResult<ResponsePayload> {
     agent.ensure_request_prepared()?;
-    let upstream_json = upstream_request(&agent.request, true)?;
-    let lines = call_inference(
+    let withheld = agent.builtin_tools_withheld().then_some(registry);
+    let upstream_json = upstream_request_with_guidance(&agent.request, true, agent.agent_guidance(), withheld)?;
+    let lines = call_inference_limited(
         upstream_json,
         exec_ctx.responses_url(),
         Arc::clone(&exec_ctx.client),
         auth.map(str::to_owned),
         exec_ctx.streaming_timeout,
-    )
-    .map(|line| {
-        let line = line?;
-        response_budget.consume(line.len())?;
-        Ok(line)
-    });
+        exec_ctx.responses_config.max_upstream_sse_line_bytes,
+    );
     agent
         .run_with_stream_body(
             lines,
@@ -162,6 +200,7 @@ pub(super) async fn fetch_stream_payload(
             translation_context(registry, agent),
             registry,
             output_offset,
+            Some(response_budget.clone()),
         )
         .await
 }
@@ -170,12 +209,45 @@ pub(super) async fn fetch_stream_payload(
 pub(super) mod tests {
     use super::*;
     use crate::events::SseLine;
+    use crate::executor::error::ResourceLimit;
     use crate::executor::modes::{ConversationHandler, ResponseHandler};
     use crate::executor::pipeline::RoundIngestion;
+    use crate::executor::relay::RelayLimits;
     use crate::storage::{ConversationStore, ResponseStore};
     use crate::types::io::ResponsesInput;
     use crate::types::request_response::RequestPayload;
     use serde_json::Value;
+
+    #[test]
+    fn agent_guidance_is_last_and_never_mutates_canonical_history() {
+        let mut ctx = request_context();
+        ctx.enriched_request.instructions = Some("caller instructions".into());
+        ctx.enriched_request.input = serde_json::from_value(serde_json::json!([
+            {"role":"developer","content":"caller developer message"},
+            {"role":"user","content":"review"},
+            {"role":"assistant","content":"parent delegation history"}
+        ]))
+        .unwrap();
+        let guidance: InputMessage = serde_json::from_value(serde_json::json!({
+            "role":"developer","content":"current child ownership"
+        }))
+        .unwrap();
+        let baseline: Value = serde_json::from_str(&upstream_request(&ctx, false).unwrap()).unwrap();
+        for stream in [false, true] {
+            let body: Value =
+                serde_json::from_str(&upstream_request_with_guidance(&ctx, stream, Some(&guidance), None).unwrap())
+                    .unwrap();
+            assert_eq!(body["instructions"], "caller instructions");
+            let items = body["input"].as_array().unwrap();
+            assert_eq!(&items[..3], baseline["input"].as_array().unwrap());
+            assert_eq!(items.len(), 4);
+            assert_eq!(items[3]["role"], "developer");
+            assert_eq!(items[3]["content"], "current child ownership");
+        }
+        let after: Value = serde_json::from_str(&upstream_request(&ctx, false).unwrap()).unwrap();
+        assert_eq!(after, baseline);
+        assert!(ctx.new_input_items.is_empty());
+    }
 
     #[test]
     fn translation_snapshot_owns_prepared_availability_after_registry_is_dropped() {
@@ -194,13 +266,13 @@ pub(super) mod tests {
             ("raw_echo".to_owned(), ToolType::Custom),
         ]));
         let state = ToolSearchState::build(&request).expect("prepared state");
-        let agent = agent_pipeline(request_context(), Some(state), None);
+        let agent = AgentPipeline::new(request_context(), Some(state), StreamRelay::detached());
         let context = translation_context(&registry, &agent);
         drop(registry);
         assert_eq!(context.tool_type("raw_echo"), ToolType::Custom);
         assert_eq!(context.tool_type("tool_search"), ToolType::ToolSearch);
         assert_eq!(context.tool_type("unknown"), ToolType::Function);
-        let mut pipeline = RoundIngestion::new("resp_1".to_owned(), None, Validation::Lenient, context);
+        let mut pipeline = RoundIngestion::new("resp_1".to_owned(), None, Validation::Lenient, context, None);
         let line = format!(
             "data: {}",
             serde_json::json!({
@@ -228,18 +300,16 @@ pub(super) mod tests {
         );
         request.enriched_request.parallel_tool_calls = Some(false);
         let state = ToolSearchHandler::prepare_request(&mut request.enriched_request, &[], false).unwrap();
-        let registry = ToolRegistry::build_with_handlers(
-            request.enriched_request.tools.as_mut().unwrap(),
-            &mut GatewayExecutors::default(),
-        )
-        .await
-        .unwrap();
-        let mut agent = agent_pipeline(request, state, None);
+        let mut declarations = request.enriched_request.tool_declarations().unwrap();
+        let registry = ToolRegistry::build_with_handlers(&mut declarations, &mut GatewayExecutors::default())
+            .await
+            .unwrap();
+        let mut agent = AgentPipeline::new(request, state, StreamRelay::detached());
         let stream_context = translation_context(&registry, &agent);
         let json_context = translation_context(&registry, &agent);
         drop(registry);
 
-        let mut ingestion = RoundIngestion::new("resp_1".to_owned(), None, Validation::Lenient, stream_context);
+        let mut ingestion = RoundIngestion::new("resp_1".to_owned(), None, Validation::Lenient, stream_context, None);
         let created = serde_json::json!({"type":"response.created","response":{
             "id":"upstream","status":"in_progress","tools":[],
             "tool_choice":{"type":"function","name":"raw_echo"}
@@ -270,7 +340,7 @@ pub(super) mod tests {
         let stream_payload = ingestion.finish("test", None, None).unwrap();
         let body = serde_json::json!({"id":"upstream","status":"completed","output":[item]}).to_string();
         let json_payload = agent
-            .run_with_json_body(&body, Validation::Lenient, json_context)
+            .run_with_json_body(&body, Validation::Lenient, json_context, None)
             .unwrap();
         assert_eq!(
             serde_json::to_value(&stream_payload.output).unwrap(),
@@ -288,37 +358,211 @@ pub(super) mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn builtin_tool_declarations_stay_public_in_stream_and_json_metadata() {
+        use crate::types::io::ToolChoice;
+        let mut request = request_context();
+        request.enriched_request.tools = Some(
+            serde_json::from_value(serde_json::json!([
+                {"type":"web_search_preview"},
+                {
+                    "type":"function","name":"get_weather","description":"Get the current weather for a city.",
+                    "parameters":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}
+                }
+            ]))
+            .unwrap(),
+        );
+        request.enriched_request.tool_choice = Some(ToolChoice::Required);
+        let public_tools = serde_json::to_value(&request.enriched_request.tools).unwrap();
+        let registry = ToolRegistry::from_tool_types(std::collections::HashMap::new());
+        let mut agent = AgentPipeline::new(request, None, StreamRelay::detached());
+        // Preserve an inherited selector before relaxing the inference request.
+        assert!(agent.request.original_request.tool_choice.is_none());
+        agent.request.relax_tool_choice();
+        let stream_context = translation_context(&registry, &agent);
+        let json_context = translation_context(&registry, &agent);
+        drop(registry);
+
+        // The model server echoes the lowered function schemas it received, and lifecycle
+        // snapshots may omit the declaration fields entirely.
+        let lowered = serde_json::json!([
+            {"type":"function","name":"web_search","parameters":{"type":"object","properties":{"query":{"type":"string"}}}}
+        ]);
+        let mut ingestion = RoundIngestion::new("resp_1".to_owned(), None, Validation::Lenient, stream_context, None);
+        for frame in [
+            serde_json::json!({"type":"response.created","response":{
+                "id":"upstream","status":"in_progress","tools":lowered,"tool_choice":"auto"
+            }}),
+            serde_json::json!({"type":"response.completed","response":{
+                "id":"upstream","status":"completed","output":[]
+            }}),
+        ] {
+            let translated = ingestion.push(SseLine::parse(&format!("data: {frame}"))).unwrap();
+            let response = &translated.frames[0].wire.rest["response"];
+            assert_eq!(response["tools"], public_tools, "public declarations for {frame}");
+            assert_eq!(
+                response["tool_choice"],
+                serde_json::json!("required"),
+                "selector for {frame}"
+            );
+            assert!(
+                !response["tools"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|tool| tool["type"] == "function" && tool["name"] == "web_search"),
+                "internal web_search function schema must not reach the client"
+            );
+        }
+
+        let body = serde_json::json!({"id":"upstream","status":"completed","output":[]}).to_string();
+        let json_payload = agent
+            .run_with_json_body(&body, Validation::Lenient, json_context, None)
+            .unwrap();
+        assert_eq!(serde_json::to_value(&json_payload.tools).unwrap(), public_tools);
+        assert_eq!(
+            serde_json::to_value(&json_payload.tool_choice).unwrap(),
+            serde_json::json!("required")
+        );
+    }
+
+    /// A client declaration set for a gateway code interpreter and a request-scoped MCP
+    /// server, with the credentials and the server's discovered tools attached the way
+    /// request normalization attaches them before lowering.
+    fn code_interpreter_and_mcp_request() -> (RequestContext, Value) {
+        use crate::types::io::ToolChoice;
+        use crate::types::tools::{McpDiscoveredToolParam, ResponsesTool};
+        let mut request = request_context();
+        let mut tools: Vec<ResponsesTool> = serde_json::from_value(serde_json::json!([
+            {"type":"code_interpreter","container":{"type":"auto"}},
+            {
+                "type":"mcp","server_label":"weather","server_url":"https://mcp.example.test/mcp",
+                "headers":{"Authorization":"Bearer header-secret"},
+                "authorization":"field-secret",
+                "allowed_tools":["forecast"],"require_approval":"never"
+            }
+        ]))
+        .expect("valid declarations");
+        let ResponsesTool::Mcp(mcp) = &mut tools[1] else {
+            panic!("the second declaration is an MCP server");
+        };
+        mcp.discovered_tools.push(
+            serde_json::from_value::<McpDiscoveredToolParam>(serde_json::json!({
+                "server_label":"weather",
+                "tool_name":"forecast",
+                "internal_name":"mcp__weather__forecast",
+                "tool":{
+                    "name":"forecast",
+                    "description":"Forecast a city.",
+                    "inputSchema":{"type":"object","properties":{"city":{"type":"string"}}}
+                }
+            }))
+            .expect("discovered MCP tool"),
+        );
+        request.enriched_request.tools = Some(tools);
+        request.enriched_request.tool_choice = Some(ToolChoice::Required);
+        let public = serde_json::json!([
+            {"type":"code_interpreter","container":{"type":"auto"}},
+            {
+                "type":"mcp","server_label":"weather","server_url":"https://mcp.example.test/mcp",
+                "allowed_tools":["forecast"],"require_approval":"never"
+            }
+        ]);
+        (request, public)
+    }
+
+    #[tokio::test]
+    async fn code_interpreter_and_mcp_declarations_stay_public_without_internal_fields() {
+        let (request, public_tools) = code_interpreter_and_mcp_request();
+
+        // Inference keeps the lowered function schemas, and never carries request-scoped
+        // credentials or the discovered `tools/list` result.
+        let upstream: Value = serde_json::from_str(&upstream_request(&request, false).expect("upstream body")).unwrap();
+        let upstream_names: Vec<&str> = upstream["tools"]
+            .as_array()
+            .expect("lowered function schemas")
+            .iter()
+            .filter_map(|tool| tool["name"].as_str())
+            .collect();
+        assert_eq!(upstream_names, ["code_interpreter", "mcp__weather__forecast"]);
+        for internal in ["header-secret", "field-secret", "_agentic_discovered_tools"] {
+            assert!(
+                !upstream.to_string().contains(internal),
+                "{internal} must stay out of the upstream request"
+            );
+        }
+
+        let registry = ToolRegistry::from_tool_types(std::collections::HashMap::new());
+        let mut agent = AgentPipeline::new(request, None, StreamRelay::detached());
+        let stream_context = translation_context(&registry, &agent);
+        let json_context = translation_context(&registry, &agent);
+        drop(registry);
+
+        // The model server echoes the lowered schemas it received, and terminal lifecycle
+        // snapshots omit the declaration fields entirely.
+        let lowered = serde_json::json!([
+            {"type":"function","name":"code_interpreter","parameters":{"type":"object"}},
+            {"type":"function","name":"mcp__weather__forecast","parameters":{"type":"object"}}
+        ]);
+        let mut ingestion = RoundIngestion::new("resp_1".to_owned(), None, Validation::Lenient, stream_context, None);
+        for frame in [
+            serde_json::json!({"type":"response.created","response":{
+                "id":"upstream","status":"in_progress","tools":lowered,"tool_choice":"auto"
+            }}),
+            serde_json::json!({"type":"response.completed","response":{
+                "id":"upstream","status":"completed","output":[]
+            }}),
+        ] {
+            let translated = ingestion.push(SseLine::parse(&format!("data: {frame}"))).unwrap();
+            let response = &translated.frames[0].wire.rest["response"];
+            assert_eq!(response["tools"], public_tools, "public declarations for {frame}");
+            assert_eq!(
+                response["tool_choice"],
+                serde_json::json!("required"),
+                "selector for {frame}"
+            );
+            let client_tools = response["tools"].to_string();
+            for internal in [
+                "header-secret",
+                "field-secret",
+                "_agentic_discovered_tools",
+                "mcp__weather__forecast",
+            ] {
+                assert!(
+                    !client_tools.contains(internal),
+                    "{internal} must never reach a client tools value: {frame}"
+                );
+            }
+        }
+
+        let body = serde_json::json!({"id":"upstream","status":"completed","output":[]}).to_string();
+        let json_payload = agent
+            .run_with_json_body(&body, Validation::Lenient, json_context, None)
+            .unwrap();
+        assert_eq!(serde_json::to_value(&json_payload.tools).unwrap(), public_tools);
+        assert_eq!(
+            serde_json::to_value(&json_payload.tool_choice).unwrap(),
+            serde_json::json!("required")
+        );
+    }
+
     pub(in crate::executor) fn request_context() -> RequestContext {
         let request = RequestPayload {
-            model: "test".to_owned(),
+            model: "test".into(),
             input: ResponsesInput::Text("hi".to_owned()),
-            instructions: None,
-            previous_response_id: None,
-            conversation_id: None,
-            tools: None,
-            tool_choice: None,
             stream: true,
             store: false,
-            include: None,
-            reasoning: None,
-            text: None,
-            temperature: None,
-            top_p: None,
-            max_output_tokens: None,
-            ignore_eos: None,
-            truncation: None,
-            metadata: None,
-            parallel_tool_calls: None,
-            cache_salt: None,
-            context_management: None,
+            ..Default::default()
         };
         RequestContext {
+            multi_agent_tree: None,
             original_request: request.clone(),
             enriched_request: request,
             new_input_items: Vec::new(),
             response_id: "resp_test".to_owned(),
             conversation_id: None,
             conversation_version: None,
+            continuation: None,
         }
     }
 
@@ -332,7 +576,13 @@ pub(super) mod tests {
             .consume(crate::executor::response_budget::MAX_EXECUTOR_RESPONSE_BYTES / 2)
             .expect("second round should consume the budget");
         let error = budget.consume(1).expect_err("next round must exceed shared budget");
-        assert!(error.to_string().contains("executor response budget exceeded"));
+        assert!(matches!(
+            error,
+            ExecutorError::ResourceLimitExceeded {
+                limit: ResourceLimit::ResponseBudget,
+                ..
+            }
+        ));
     }
 
     async fn streaming_test_upstream(events: &[Value]) -> (ExecutionContext, tokio::task::JoinHandle<()>) {
@@ -357,7 +607,7 @@ pub(super) mod tests {
         let context = ExecutionContext::new(
             ConversationHandler::new(ConversationStore::disabled()),
             ResponseHandler::new(ResponseStore::disabled()),
-            Arc::new(reqwest::Client::new()),
+            Arc::new(reqwest::Client::builder().no_proxy().build().unwrap()),
             format!("http://{address}"),
         );
         (context, server)
@@ -378,9 +628,13 @@ pub(super) mod tests {
             crate::tool::ToolType::Custom,
         )]));
         let (sender, mut receiver) = tokio::sync::mpsc::channel(16);
-        let mut agent = agent_pipeline(request_context(), None, Some(sender));
+        let mut live_agent = AgentPipeline::new(
+            request_context(),
+            None,
+            StreamRelay::client(sender, RelayLimits::default()),
+        );
         let live = fetch_stream_payload(
-            &mut agent,
+            &mut live_agent,
             &exec_ctx,
             None,
             &registry,
@@ -389,7 +643,7 @@ pub(super) mod tests {
         )
         .await
         .unwrap();
-        let mut agent = agent_pipeline(request_context(), None, None);
+        let mut agent = AgentPipeline::new(request_context(), None, StreamRelay::detached());
         let collected = fetch_stream_payload(
             &mut agent,
             &exec_ctx,
@@ -401,17 +655,17 @@ pub(super) mod tests {
         .await
         .unwrap();
         server.abort();
-        let mut live_payload = serde_json::to_value(live.payload).unwrap();
-        let mut collected_payload = serde_json::to_value(collected.payload).unwrap();
+        let mut live_payload = serde_json::to_value(live).unwrap();
+        let mut collected_payload = serde_json::to_value(collected).unwrap();
         live_payload.as_object_mut().unwrap().remove("created_at");
         collected_payload.as_object_mut().unwrap().remove("created_at");
         assert_eq!(live_payload, collected_payload);
         assert_eq!(live_payload["id"], agent.request.response_id);
         assert_eq!(live_payload["usage"]["total_tokens"], 5);
-        assert!(live.deferred_events.is_empty());
-        assert!(collected.deferred_events.is_empty());
+        assert!(!live_agent.relay_mut().has_deferred());
         let mut emitted = String::new();
         while let Ok(event) = receiver.try_recv() {
+            let event = event.into_frame();
             emitted.push_str(&event.content);
         }
         assert!(emitted.contains("custom_tool_call"));
@@ -447,7 +701,12 @@ pub(super) mod tests {
             let mut errors = Vec::new();
             for emit in [false, true] {
                 let (sender, _receiver) = tokio::sync::mpsc::channel(16);
-                let mut agent = agent_pipeline(request_context(), None, emit.then_some(sender));
+                let relay = if emit {
+                    StreamRelay::client(sender, RelayLimits::default())
+                } else {
+                    StreamRelay::detached()
+                };
+                let mut agent = AgentPipeline::new(request_context(), None, relay);
                 let error = fetch_stream_payload(
                     &mut agent,
                     &exec_ctx,
@@ -457,8 +716,7 @@ pub(super) mod tests {
                     &ExecutorResponseBudget::new(),
                 )
                 .await
-                .err()
-                .expect("translation must reject the stream");
+                .expect_err("translation must reject the stream");
                 assert!(error.to_string().contains(expected_error), "{error}");
                 errors.push(error.to_string());
             }
@@ -471,14 +729,46 @@ pub(super) mod tests {
     async fn streamed_response_reader_enforces_the_cumulative_budget() {
         use std::fmt::Write as _;
 
-        let data = "x".repeat(200 * 1024);
+        let item_id = "msg_1";
+        let delta = "x".repeat(300 * 1024);
         let mut response = String::new();
-        for sequence_number in 0..6 {
-            write!(
-                &mut response,
-                "data: {{\"type\":\"test.event\",\"sequence_number\":{sequence_number},\"delta\":\"{data}\"}}\n\n"
-            )
-            .expect("writing to a String cannot fail");
+        let events = [
+            serde_json::json!({"type":"response.created","response":{"id":"resp_1","status":"in_progress"}}),
+            serde_json::json!({
+                "type": "response.output_item.added",
+                "output_index": 0,
+                "item": {
+                    "id": item_id,
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [],
+                    "status": "in_progress"
+                }
+            }),
+            serde_json::json!({
+                "type": "response.content_part.added",
+                "output_index": 0,
+                "item_id": item_id,
+                "content_index": 0,
+                "part": {"type": "output_text", "text": ""}
+            }),
+            serde_json::json!({
+                "type": "response.output_text.delta",
+                "output_index": 0,
+                "item_id": item_id,
+                "content_index": 0,
+                "delta": delta
+            }),
+            serde_json::json!({
+                "type": "response.output_text.delta",
+                "output_index": 0,
+                "item_id": item_id,
+                "content_index": 0,
+                "delta": delta
+            }),
+        ];
+        for event in &events {
+            write!(&mut response, "data: {event}\n\n").expect("writing to a String cannot fail");
         }
         let app = axum::Router::new().route(
             "/v1/responses",
@@ -497,17 +787,531 @@ pub(super) mod tests {
         let exec_ctx = ExecutionContext::new(
             ConversationHandler::new(ConversationStore::disabled()),
             ResponseHandler::new(ResponseStore::disabled()),
-            Arc::new(reqwest::Client::new()),
+            Arc::new(reqwest::Client::builder().no_proxy().build().unwrap()),
             format!("http://{address}"),
         );
-        let budget = ExecutorResponseBudget::new();
+        let budget = ExecutorResponseBudget::with_limit(500 * 1024);
 
-        let mut agent = agent_pipeline(request_context(), None, None);
+        let mut agent = AgentPipeline::new(request_context(), None, StreamRelay::detached());
         let error = fetch_stream_payload(&mut agent, &exec_ctx, None, &ToolRegistry::default(), 0, &budget)
             .await
-            .err()
-            .expect("cumulative streamed response must be bounded");
-        assert!(error.to_string().contains("executor response budget exceeded"));
+            .expect_err("cumulative streamed response must be bounded");
+        assert!(matches!(
+            error,
+            ExecutorError::ResourceLimitExceeded {
+                limit: ResourceLimit::ResponseBudget,
+                ..
+            }
+        ));
+        server.abort();
+    }
+
+    fn synthetic_events(size: usize, chunk: usize) -> (Value, Vec<Value>) {
+        let text = "x".repeat(size);
+        let part = serde_json::json!({"type": "output_text", "text": text, "annotations": []});
+        let item = serde_json::json!({
+            "id": "msg_fixture",
+            "type": "message",
+            "role": "assistant",
+            "status": "completed",
+            "content": [part]
+        });
+        let response = serde_json::json!({
+            "id": "resp_fixture",
+            "object": "response",
+            "created_at": 1_789_151_000,
+            "model": "fixture",
+            "status": "completed",
+            "output": [item],
+            "error": null,
+            "incomplete_details": null
+        });
+        let initial = serde_json::json!({
+            "id": "resp_fixture",
+            "object": "response",
+            "created_at": 1_789_151_000,
+            "model": "fixture",
+            "status": "in_progress",
+            "output": [],
+            "error": null,
+            "incomplete_details": null
+        });
+        let mut events = Vec::new();
+        events.push(serde_json::json!({"type": "response.created", "response": initial}));
+        events.push(serde_json::json!({"type": "response.in_progress", "response": initial}));
+        events.push(serde_json::json!({
+            "type": "response.output_item.added",
+            "output_index": 0,
+            "item": {
+                "id": "msg_fixture",
+                "type": "message",
+                "role": "assistant",
+                "status": "in_progress",
+                "content": []
+            }
+        }));
+        events.push(serde_json::json!({
+            "type": "response.content_part.added",
+            "output_index": 0,
+            "item_id": "msg_fixture",
+            "content_index": 0,
+            "part": {"type": "output_text", "text": ""}
+        }));
+        let mut at = 0;
+        while at < size {
+            let end = (at + chunk).min(size);
+            events.push(serde_json::json!({
+                "type": "response.output_text.delta",
+                "output_index": 0,
+                "item_id": "msg_fixture",
+                "content_index": 0,
+                "delta": &text[at..end]
+            }));
+            at = end;
+        }
+        events.push(serde_json::json!({
+            "type": "response.output_text.done",
+            "output_index": 0,
+            "item_id": "msg_fixture",
+            "content_index": 0,
+            "text": text
+        }));
+        events.push(serde_json::json!({
+            "type": "response.content_part.done",
+            "output_index": 0,
+            "item_id": "msg_fixture",
+            "content_index": 0,
+            "part": {"type": "output_text", "text": text, "annotations": []}
+        }));
+        events.push(serde_json::json!({
+            "type": "response.output_item.done",
+            "output_index": 0,
+            "item": item
+        }));
+        events.push(serde_json::json!({
+            "type": "response.completed",
+            "response": response
+        }));
+        (response, events)
+    }
+
+    #[tokio::test]
+    async fn small_and_large_sse_chunking_and_json_produce_identical_retained_bytes() {
+        let (json_response, events_1byte) = synthetic_events(8000, 1);
+        let (_, events_1024byte) = synthetic_events(8000, 1024);
+
+        // 1. Stream with 1-byte chunks and 1 MiB budget
+        // In the original bug (Issue #288), 8000 1-byte chunks failed after 7,655 bytes with a 1 MiB budget
+        // because wire bytes charged 1,048,582 bytes. Now it succeeds!
+        let budget_1byte = ExecutorResponseBudget::with_limit(1024 * 1024);
+        let (exec_ctx, server) = streaming_test_upstream(&events_1byte).await;
+        let mut agent = AgentPipeline::new(request_context(), None, StreamRelay::detached());
+        let result_1byte =
+            fetch_stream_payload(&mut agent, &exec_ctx, None, &ToolRegistry::default(), 0, &budget_1byte)
+                .await
+                .expect("1-byte chunks must succeed under 1 MiB budget");
+        server.abort();
+
+        // 2. Stream with 1024-byte chunks
+        let budget_1024byte = ExecutorResponseBudget::with_limit(1024 * 1024);
+        let (exec_ctx, server) = streaming_test_upstream(&events_1024byte).await;
+        let mut agent = AgentPipeline::new(request_context(), None, StreamRelay::detached());
+        let result_1024byte = fetch_stream_payload(
+            &mut agent,
+            &exec_ctx,
+            None,
+            &ToolRegistry::default(),
+            0,
+            &budget_1024byte,
+        )
+        .await
+        .expect("1024-byte chunks must succeed");
+        server.abort();
+
+        // 3. JSON body
+        let budget_json = ExecutorResponseBudget::with_limit(1024 * 1024);
+        let mut agent = AgentPipeline::new(request_context(), None, StreamRelay::detached());
+        let result_json = agent
+            .run_with_json_body(
+                &json_response.to_string(),
+                Validation::Strict,
+                TranslationContext::default(),
+                Some(budget_json.clone()),
+            )
+            .expect("JSON body must succeed");
+
+        // Retained bytes charged MUST be identical across 1-byte chunks, 1024-byte chunks, and JSON!
+        assert_eq!(budget_1byte.used(), budget_1024byte.used());
+        assert_eq!(budget_1byte.used(), budget_json.used());
+        // Verify payload equivalence
+        assert_eq!(
+            serde_json::to_value(&result_1byte.output).unwrap(),
+            serde_json::to_value(&result_1024byte.output).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(&result_1byte.output).unwrap(),
+            serde_json::to_value(&result_json.output).unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn repeated_completion_snapshots_do_not_double_count_retained_bytes() {
+        let (json_response, events) = synthetic_events(1000, 100);
+        let budget = ExecutorResponseBudget::with_limit(1024 * 1024);
+        let (exec_ctx, server) = streaming_test_upstream(&events).await;
+        let mut agent = AgentPipeline::new(request_context(), None, StreamRelay::detached());
+        let result = fetch_stream_payload(&mut agent, &exec_ctx, None, &ToolRegistry::default(), 0, &budget)
+            .await
+            .unwrap();
+        server.abort();
+
+        let budget_json = ExecutorResponseBudget::with_limit(1024 * 1024);
+        let mut agent = AgentPipeline::new(request_context(), None, StreamRelay::detached());
+        let _ = agent
+            .run_with_json_body(
+                &json_response.to_string(),
+                Validation::Strict,
+                TranslationContext::default(),
+                Some(budget_json.clone()),
+            )
+            .unwrap();
+
+        assert_eq!(budget.used(), budget_json.used());
+        assert_eq!(result.output.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn streaming_response_larger_than_old_stream_event_cap_succeeds_under_default_config() {
+        let (_response, events) = synthetic_events(2 * 1024 * 1024, 64 * 1024);
+        let (exec_ctx, server) = streaming_test_upstream(&events).await;
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(128);
+        let limits = RelayLimits::with_event_bytes(exec_ctx.responses_config.max_stream_event_bytes);
+        let mut agent = AgentPipeline::new(request_context(), None, StreamRelay::client(sender, limits));
+        let result = fetch_stream_payload(
+            &mut agent,
+            &exec_ctx,
+            None,
+            &ToolRegistry::default(),
+            0,
+            &ExecutorResponseBudget::new(),
+        )
+        .await
+        .expect("2 MiB stream should succeed under default config");
+        server.abort();
+        assert_eq!(result.output.len(), 1);
+        let mut saw_output_item_done = false;
+        while let Ok(event) = receiver.try_recv() {
+            let event = event.into_frame();
+            if event.content.contains("response.output_item.done") {
+                saw_output_item_done = true;
+            }
+        }
+        assert!(saw_output_item_done, "stream must emit response.output_item.done");
+        let (_, mut accumulator) = agent.into_parts();
+        let terminal_chunk = accumulator
+            .terminal_response_chunk(&result)
+            .expect("terminal response chunk of 2 MiB succeeds under default limit");
+        assert!(terminal_chunk.contains("response.completed"));
+    }
+
+    #[tokio::test]
+    async fn lenient_done_without_output_item_done_reconciles_budget() {
+        let text = "x".repeat(5000);
+        let events = vec![
+            serde_json::json!({
+                "type": "response.created",
+                "response": {"id": "resp_lenient", "status": "in_progress"}
+            }),
+            serde_json::json!({
+                "type": "response.output_item.added",
+                "output_index": 0,
+                "item": {
+                    "id": "msg_lenient",
+                    "type": "message",
+                    "role": "assistant",
+                    "status": "in_progress",
+                    "content": []
+                }
+            }),
+            serde_json::json!({
+                "type": "response.output_text.done",
+                "output_index": 0,
+                "item_id": "msg_lenient",
+                "content_index": 0,
+                "text": &text
+            }),
+            serde_json::json!({
+                "type": "response.completed",
+                "response": {"id": "resp_lenient", "status": "completed", "output": []}
+            }),
+        ];
+        let (exec_ctx, server) = streaming_test_upstream(&events).await;
+        let budget = ExecutorResponseBudget::with_limit(1024 * 1024);
+        let mut agent = AgentPipeline::new(request_context(), None, StreamRelay::detached());
+        let result = fetch_stream_payload(&mut agent, &exec_ctx, None, &ToolRegistry::default(), 0, &budget)
+            .await
+            .expect("lenient stream with done-only text should reconcile and succeed");
+        server.abort();
+        assert_eq!(result.output.len(), 1);
+        assert!(budget.used() >= 5000);
+    }
+
+    #[tokio::test]
+    async fn lenient_done_without_output_item_done_exceeding_budget_fails_promptly() {
+        use crate::executor::error::ResourceLimit;
+
+        let text = "x".repeat(5000);
+        // Note: No terminal response.completed. The stream must fail promptly on output_text.done
+        // rather than at terminal stream completion.
+        let events = vec![
+            serde_json::json!({
+                "type": "response.created",
+                "response": {"id": "resp_lenient", "status": "in_progress"}
+            }),
+            serde_json::json!({
+                "type": "response.output_item.added",
+                "output_index": 0,
+                "item": {
+                    "id": "msg_lenient",
+                    "type": "message",
+                    "role": "assistant",
+                    "status": "in_progress",
+                    "content": []
+                }
+            }),
+            serde_json::json!({
+                "type": "response.output_text.done",
+                "output_index": 0,
+                "item_id": "msg_lenient",
+                "content_index": 0,
+                "text": &text
+            }),
+        ];
+        let (exec_ctx, server) = streaming_test_upstream(&events).await;
+        let budget = ExecutorResponseBudget::with_limit(4000);
+        let mut agent = AgentPipeline::new(request_context(), None, StreamRelay::detached());
+        let error = fetch_stream_payload(&mut agent, &exec_ctx, None, &ToolRegistry::default(), 0, &budget)
+            .await
+            .expect_err("stream exceeding budget on done payload must fail promptly");
+        server.abort();
+        assert!(matches!(
+            error,
+            ExecutorError::ResourceLimitExceeded {
+                limit: ResourceLimit::ResponseBudget,
+                max_bytes: 4000,
+            }
+        ));
+    }
+
+    fn two_part_stream_events(deltas: bool) -> Vec<serde_json::Value> {
+        let (t0, k0, v0) = if deltas {
+            ("response.output_text.delta", "delta", "part 0 text ")
+        } else {
+            ("response.output_text.done", "text", "part 0 text ")
+        };
+        let (t1, k1, v1) = if deltas {
+            ("response.output_text.delta", "delta", "part 1 text")
+        } else {
+            ("response.output_text.done", "text", "part 1 text")
+        };
+        vec![
+            serde_json::json!({
+                "type": "response.created",
+                "response": {"id": "resp_2parts", "status": "in_progress"}
+            }),
+            serde_json::json!({
+                "type": "response.output_item.added",
+                "output_index": 0,
+                "item": {
+                    "id": "msg_2parts",
+                    "type": "message",
+                    "role": "assistant",
+                    "status": "in_progress",
+                    "content": []
+                }
+            }),
+            serde_json::json!({
+                "type": t0,
+                "output_index": 0,
+                "item_id": "msg_2parts",
+                "content_index": 0,
+                k0: v0
+            }),
+            serde_json::json!({
+                "type": t1,
+                "output_index": 0,
+                "item_id": "msg_2parts",
+                "content_index": 1,
+                k1: v1
+            }),
+            serde_json::json!({
+                "type": "response.completed",
+                "response": {"id": "resp_2parts", "status": "completed", "output": []}
+            }),
+        ]
+    }
+
+    #[tokio::test]
+    async fn two_part_done_only_stream_preserves_both_parts() {
+        use crate::types::io::OutputItem;
+
+        let events = two_part_stream_events(false);
+        let (exec_ctx, server) = streaming_test_upstream(&events).await;
+        let budget = ExecutorResponseBudget::with_limit(1024 * 1024);
+        let mut agent = AgentPipeline::new(request_context(), None, StreamRelay::detached());
+        let result = fetch_stream_payload(&mut agent, &exec_ctx, None, &ToolRegistry::default(), 0, &budget)
+            .await
+            .expect("two-part done-only stream must succeed");
+        server.abort();
+        assert_eq!(result.output.len(), 1);
+        if let OutputItem::Message(msg) = &result.output[0] {
+            assert_eq!(msg.content.len(), 2);
+            assert_eq!(msg.content[0].text(), "part 0 text ");
+            assert_eq!(msg.content[1].text(), "part 1 text");
+        } else {
+            panic!("expected OutputItem::Message");
+        }
+
+        // Equivalent multi-part stream with deltas to assert budget invariance
+        let delta_events = two_part_stream_events(true);
+        let (exec_ctx_delta, server_delta) = streaming_test_upstream(&delta_events).await;
+        let delta_budget = ExecutorResponseBudget::with_limit(1024 * 1024);
+        let mut agent_delta = AgentPipeline::new(request_context(), None, StreamRelay::detached());
+        let result_delta = fetch_stream_payload(
+            &mut agent_delta,
+            &exec_ctx_delta,
+            None,
+            &ToolRegistry::default(),
+            0,
+            &delta_budget,
+        )
+        .await
+        .expect("two-part delta stream must succeed");
+        server_delta.abort();
+
+        assert_eq!(budget.used(), delta_budget.used());
+        assert_eq!(
+            serde_json::to_value(&result.output).unwrap(),
+            serde_json::to_value(&result_delta.output).unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn shared_budget_draws_down_across_stream_rounds() {
+        let (_, events) = synthetic_events(400 * 1024, 64 * 1024);
+        let budget = ExecutorResponseBudget::with_limit(500 * 1024);
+
+        // Round 1 consumes ~400 KiB
+        let (exec_ctx, server) = streaming_test_upstream(&events).await;
+        let mut agent = AgentPipeline::new(request_context(), None, StreamRelay::detached());
+        let _ = fetch_stream_payload(&mut agent, &exec_ctx, None, &ToolRegistry::default(), 0, &budget)
+            .await
+            .expect("round 1 must fit within budget");
+        server.abort();
+
+        // Round 2 tries to consume another ~400 KiB and must exceed the 500 KiB budget
+        let (exec_ctx, server) = streaming_test_upstream(&events).await;
+        let mut agent = AgentPipeline::new(request_context(), None, StreamRelay::detached());
+        let error = fetch_stream_payload(&mut agent, &exec_ctx, None, &ToolRegistry::default(), 0, &budget)
+            .await
+            .expect_err("round 2 must exceed shared budget");
+        assert!(matches!(
+            error,
+            ExecutorError::ResourceLimitExceeded {
+                limit: ResourceLimit::ResponseBudget,
+                ..
+            }
+        ));
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn raw_sse_line_limit_is_enforced() {
+        use std::fmt::Write as _;
+        let mut response = String::new();
+        let huge_line = "x".repeat(1000);
+        write!(
+            &mut response,
+            "data: {{\"type\":\"response.output_text.delta\",\"delta\":\"{huge_line}\"}}\n\n"
+        )
+        .unwrap();
+
+        let app = axum::Router::new().route(
+            "/v1/responses",
+            axum::routing::post(move || {
+                let response = response.clone();
+                async move { ([(axum::http::header::CONTENT_TYPE, "text/event-stream")], response) }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.ok();
+        });
+        let mut exec_ctx = ExecutionContext::new(
+            ConversationHandler::new(ConversationStore::disabled()),
+            ResponseHandler::new(ResponseStore::disabled()),
+            Arc::new(reqwest::Client::builder().no_proxy().build().unwrap()),
+            format!("http://{address}"),
+        );
+        exec_ctx.responses_config.max_upstream_sse_line_bytes = 500;
+
+        let mut agent = AgentPipeline::new(request_context(), None, StreamRelay::detached());
+        let error = fetch_stream_payload(
+            &mut agent,
+            &exec_ctx,
+            None,
+            &ToolRegistry::default(),
+            0,
+            &ExecutorResponseBudget::new(),
+        )
+        .await
+        .expect_err("line exceeding max_upstream_sse_line_bytes must fail");
+        assert!(matches!(
+            error,
+            ExecutorError::ResourceLimitExceeded {
+                limit: ResourceLimit::UpstreamSseLine,
+                ..
+            }
+        ));
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn raw_json_body_limit_is_enforced() {
+        let app = axum::Router::new().route(
+            "/v1/responses",
+            axum::routing::post(|| async {
+                (
+                    [(axum::http::header::CONTENT_TYPE, "application/json")],
+                    "x".repeat(2000),
+                )
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.ok();
+        });
+        let mut exec_ctx = ExecutionContext::new(
+            ConversationHandler::new(ConversationStore::disabled()),
+            ResponseHandler::new(ResponseStore::disabled()),
+            Arc::new(reqwest::Client::builder().no_proxy().build().unwrap()),
+            format!("http://{address}"),
+        );
+        exec_ctx.responses_config.max_upstream_json_bytes = 1000;
+
+        let mut agent = AgentPipeline::new(request_context(), None, StreamRelay::detached());
+        let error = fetch_blocking_payload(&mut agent, &exec_ctx, None, &ToolRegistry::default(), None)
+            .await
+            .expect_err("body exceeding max_upstream_json_bytes must fail");
+        assert!(matches!(
+            error,
+            ExecutorError::ResourceLimitExceeded {
+                limit: ResourceLimit::UpstreamJsonBody,
+                ..
+            }
+        ));
         server.abort();
     }
 }
