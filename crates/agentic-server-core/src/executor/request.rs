@@ -177,6 +177,18 @@ impl ExecutionContext {
         self
     }
 
+    /// Installs one file search service for both the Files API and the
+    /// gateway-executed built-in tool.
+    #[must_use]
+    pub fn with_file_search_service(mut self, service: crate::tool::file_search::FileSearchService) -> Self {
+        self.gateway_executors
+            .insert(GatewayExecutorRegistration::FileSearch(Arc::new(
+                crate::tool::file_search::FileSearchHandler::new(service.clone()),
+            )));
+        self.file_search = Some(service);
+        self
+    }
+
     /// Checks whether configured persistence can execute a bounded query.
     pub async fn storage_ready(&self, timeout: Duration) -> bool {
         let Some(pool) = &self.storage_pool else {
@@ -222,7 +234,7 @@ impl ExecutionContext {
         let conv_handler = ConversationHandler::new(ConversationStore::new(pool.clone()));
         let resp_handler = ResponseHandler::new(ResponseStore::new(pool.clone()));
         let client = Arc::new(reqwest::Client::new());
-        let mut gateway_executors = GatewayExecutors::from_config(Arc::clone(&client), &cfg.tools)
+        let gateway_executors = GatewayExecutors::from_config(Arc::clone(&client), &cfg.tools)
             .map_err(|error| Error::Config(format!("failed to validate configured gateway tool policies: {error}")))?;
         let file_search = crate::tool::file_search::FileSearchService::new(
             Arc::clone(&pool),
@@ -230,11 +242,8 @@ impl ExecutionContext {
             cfg.tools.file_search.clone(),
         )
         .map_err(|error| Error::Config(error.public_message()))?;
-        gateway_executors.insert(GatewayExecutorRegistration::FileSearch(Arc::new(
-            crate::tool::file_search::FileSearchHandler::new(file_search.clone()),
-        )));
         Ok(Self {
-            file_search: Some(file_search),
+            file_search: None,
             conv_handler,
             resp_handler,
             client,
@@ -251,7 +260,8 @@ impl ExecutionContext {
             responses_config: cfg.responses,
             metrics: ExecutorMetrics::from_global(),
             storage_pool: Some(pool),
-        })
+        }
+        .with_file_search_service(file_search))
     }
 }
 

@@ -16,10 +16,11 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
-use crate::types::file_search::FileSearchError;
+use crate::types::file_search::{FileSearchError, cancelled_upload_error, validate_file_id};
 
+/// Blob storage on a local filesystem or a shared persistent volume.
 #[derive(Clone)]
-pub(crate) struct LocalFiles {
+pub struct LocalFiles {
     directory: PathBuf,
     missing_directories: Arc<OnceCell<Vec<PathBuf>>>,
     directory_ready: Arc<OnceCell<()>>,
@@ -28,7 +29,11 @@ pub(crate) struct LocalFiles {
 }
 
 impl LocalFiles {
-    pub(crate) fn new(directory: PathBuf) -> Result<Self, FileSearchError> {
+    /// Creates a local blob store rooted at an absolute directory.
+    ///
+    /// # Errors
+    /// Returns invalid-request when the directory is not absolute.
+    pub fn new(directory: PathBuf) -> Result<Self, FileSearchError> {
         if !directory.is_absolute() {
             return Err(FileSearchError::InvalidRequest(
                 "files_storage_dir must be an absolute path".into(),
@@ -43,21 +48,8 @@ impl LocalFiles {
         })
     }
 
-    pub(crate) fn validate_id(id: &str) -> Result<(), FileSearchError> {
-        let valid = id
-            .strip_prefix("file-")
-            .and_then(|suffix| uuid::Uuid::parse_str(suffix).ok().map(|uuid| (suffix, uuid)))
-            .is_some_and(|(suffix, uuid)| uuid.hyphenated().to_string() == suffix);
-        if !valid {
-            return Err(FileSearchError::InvalidRequest(
-                "file ID must be a generated file-UUID key".into(),
-            ));
-        }
-        Ok(())
-    }
-
     fn path(&self, id: &str) -> Result<PathBuf, FileSearchError> {
-        Self::validate_id(id)?;
+        validate_file_id(id)?;
         Ok(self.directory.join(id))
     }
 
@@ -81,7 +73,7 @@ impl LocalFiles {
         let written = async {
             for chunk in bytes.chunks(64 * 1024) {
                 if cancelled.is_cancelled() {
-                    return Err(cancelled_error());
+                    return Err(cancelled_upload_error());
                 }
                 file.write_all(chunk)
                     .await
@@ -102,7 +94,7 @@ impl LocalFiles {
         }
         if cancelled.is_cancelled() {
             remove_if_present(&temporary).await?;
-            return Err(cancelled_error());
+            return Err(cancelled_upload_error());
         }
         // A hard link gives atomic create-if-absent semantics without overwriting
         // another blob on the same filesystem. No caller-controlled path is used.
@@ -263,10 +255,6 @@ async fn remove_if_present(path: &Path) -> Result<(), FileSearchError> {
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
         Err(source) => Err(io_error("cleanup", source)),
     }
-}
-
-pub(crate) fn cancelled_error() -> FileSearchError {
-    FileSearchError::Unavailable("File upload was cancelled".into())
 }
 
 fn io_error(operation: &'static str, source: io::Error) -> FileSearchError {

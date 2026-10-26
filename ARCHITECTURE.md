@@ -1694,8 +1694,10 @@ the operator enables it, and Eryx runtime readiness succeeds.
 - **`file_search/`** — `FileSearchHandler` normalizes the built-in declaration and
   projects typed call items and citations. Its shared `FileSearchService` handles
   file ingestion and semantic, keyword, and hybrid retrieval against
-  `storage::file_search`. `ExecutionContext::from_config` initializes the service
-  from the existing database pool and local file storage. The Files and vector
+  injected `FileSearchRepository` and `FileBlobStore` implementations. The default
+  repository uses `storage::file_search`, while the default blob store uses local
+  files. `ExecutionContext::from_config` initializes these defaults; embedders may
+  install a service with alternate providers. The Files and vector
   store HTTP handlers call this same service. See [file search](docs/api/file-search.md) for configuration,
   resource limits, and optional PDF ingestion.
 - **`async_execution.rs`** — the model-visible hints for async client tools. A vLLM-served

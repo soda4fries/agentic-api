@@ -1,9 +1,89 @@
 use agentic_core::storage::create_pool_with_schema;
-use agentic_core::tool::file_search::FileSearchService;
+use agentic_core::storage::file_search::FileSearchStorage;
+use agentic_core::tool::file_search::{FileBlobStore, FileSearchService};
 use agentic_core::types::file_search::*;
 #[cfg(feature = "file-search-pdf")]
 use std::fmt::Write as _;
 use std::sync::Arc;
+
+#[derive(Default)]
+struct MemoryBlobs(std::sync::Mutex<std::collections::HashMap<String, Vec<u8>>>);
+
+impl FileBlobStore for MemoryBlobs {
+    fn publish<'a>(
+        &'a self,
+        id: &'a str,
+        bytes: &'a [u8],
+        _cancelled: &'a tokio_util::sync::CancellationToken,
+    ) -> futures::future::BoxFuture<'a, Result<(), FileSearchError>> {
+        Box::pin(async move {
+            let mut blobs = self.0.lock().unwrap();
+            if blobs.contains_key(id) {
+                return Err(FileSearchError::Conflict("Blob already exists".into()));
+            }
+            blobs.insert(id.to_owned(), bytes.to_vec());
+            Ok(())
+        })
+    }
+
+    fn read<'a>(
+        &'a self,
+        id: &'a str,
+        expected_bytes: i64,
+        max_bytes: usize,
+    ) -> futures::future::BoxFuture<'a, Result<Vec<u8>, FileSearchError>> {
+        Box::pin(async move {
+            let bytes = self
+                .0
+                .lock()
+                .unwrap()
+                .get(id)
+                .cloned()
+                .ok_or_else(|| FileSearchError::Unavailable("Blob is missing".into()))?;
+            if bytes.len() > max_bytes || i64::try_from(bytes.len()).ok() != Some(expected_bytes) {
+                return Err(FileSearchError::Unavailable("Blob size is invalid".into()));
+            }
+            Ok(bytes)
+        })
+    }
+
+    fn remove<'a>(&'a self, id: &'a str) -> futures::future::BoxFuture<'a, Result<(), FileSearchError>> {
+        Box::pin(async move {
+            self.0.lock().unwrap().remove(id);
+            Ok(())
+        })
+    }
+}
+
+#[tokio::test]
+async fn injected_blob_store_shares_the_sql_search_service() {
+    let pool = create_pool_with_schema(Some("sqlite::memory:")).await.unwrap();
+    let blobs = Arc::new(MemoryBlobs::default());
+    let service = FileSearchService::with_providers(
+        Arc::new(FileSearchStorage::new(pool)),
+        blobs.clone(),
+        Arc::new(reqwest::Client::new()),
+        &FileSearchConfig::default(),
+    )
+    .unwrap();
+    let file = service
+        .upload_file("notes.txt", "text/plain", "assistants", b"reef notes".to_vec())
+        .await
+        .unwrap();
+    assert_eq!(service.file_content(&file.id).await.unwrap(), b"reef notes");
+    let store = service
+        .create_vector_store(CreateVectorStoreRequest {
+            file_ids: vec![file.id.clone()],
+            ..CreateVectorStoreRequest::default()
+        })
+        .await
+        .unwrap();
+    let found = service.search(&[store.id], &query("reef")).await.unwrap();
+    assert_eq!(found.data.len(), 1);
+    assert_eq!(found.data[0].file_id, file.id);
+    service.delete_file(&file.id).await.unwrap();
+    assert!(blobs.0.lock().unwrap().is_empty());
+}
 
 struct TestService {
     service: FileSearchService,

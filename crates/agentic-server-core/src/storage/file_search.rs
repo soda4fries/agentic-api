@@ -9,39 +9,48 @@ use tokio_util::sync::CancellationToken;
 use super::{DbPool, DbTransaction};
 use crate::types::file_search::{
     FileObject, FileSearchError, ListOrder, ListParams, VectorStoreFileObject, VectorStoreObject,
+    cancelled_upload_error,
 };
 
 const MAX_CORPUS_BYTES: i64 = 64 * 1024 * 1024;
 const MAX_CORPUS_CHUNKS: i64 = 10_000;
 
+/// The default SQL-backed file metadata and exact chunk repository.
 #[derive(Clone)]
-pub(crate) struct FileSearchStorage {
+pub struct FileSearchStorage {
     pool: Arc<DbPool>,
 }
 
-#[derive(FromRow)]
-pub(crate) struct UploadedFile {
-    pub data: String,
+/// File metadata returned to the ingestion layer. Older inline uploads retain
+/// their base64 payload until they are migrated to a blob store.
+pub struct UploadedFile {
+    pub object: FileObject,
     pub content_type: String,
-    pub content_base64: String,
+    pub content: StoredFileContent,
 }
 
-pub(crate) enum FilePublicationFailure {
+/// Where an upload's bytes live. Inline content exists only for older data.
+pub enum StoredFileContent {
+    Blob,
+    LegacyInlineBase64(String),
+}
+
+/// Whether a failed metadata publication permits deleting the uploaded blob.
+pub enum FilePublicationFailure {
     SafeToRemove(FileSearchError),
     // A lost connection during COMMIT can leave the outcome unknown. Keeping
     // the blob prevents a successfully committed row from losing its content.
-    Indeterminate(sqlx::Error),
+    Indeterminate(FileSearchError),
 }
 
 #[derive(FromRow)]
-pub(crate) struct StoredVectorStore {
-    pub data: String,
+pub struct StoredVectorStore {
     pub embedding_identity: String,
     pub embedding_dimensions: i64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct StoredChunk {
+pub struct StoredChunk {
     pub file_id: String,
     pub filename: String,
     pub chunk_index: usize,
@@ -50,14 +59,14 @@ pub(crate) struct StoredChunk {
     pub attributes: crate::types::file_search::FileAttributes,
 }
 
-pub(crate) struct PreparedAttachment {
+pub struct PreparedAttachment {
     pub object: VectorStoreFileObject,
     pub chunks: Vec<StoredChunk>,
     pub dimensions: i64,
 }
 
 #[derive(Clone, Copy)]
-pub(crate) enum Collection {
+pub enum Collection {
     Files,
     Stores,
     Attachments,
@@ -81,7 +90,9 @@ impl Collection {
 }
 
 impl FileSearchStorage {
-    pub(crate) fn new(pool: Arc<DbPool>) -> Self {
+    /// Creates the default SQL file search repository.
+    #[must_use]
+    pub fn new(pool: Arc<DbPool>) -> Self {
         Self { pool }
     }
 
@@ -94,19 +105,19 @@ impl FileSearchStorage {
         let data = serde_json::to_string(file).map_err(|error| FilePublicationFailure::SafeToRemove(error.into()))?;
         let mut tx = tokio::select! {
             biased;
-            () = cancelled.cancelled() => return Err(FilePublicationFailure::SafeToRemove(super::local_files::cancelled_error())),
+            () = cancelled.cancelled() => return Err(FilePublicationFailure::SafeToRemove(cancelled_upload_error())),
             result = self.pool.begin() => result.map_err(|error| FilePublicationFailure::SafeToRemove(error.into()))?,
         };
         let query = sqlx::query("INSERT INTO file_search_files (id, created_at, data, content_type, content_base64) VALUES ($1, $2, $3, $4, '')")
             .bind(&file.id).bind(file.created_at).bind(data).bind(content_type);
         let inserted = tokio::select! {
             biased;
-            () = cancelled.cancelled() => Err(super::local_files::cancelled_error()),
+            () = cancelled.cancelled() => Err(cancelled_upload_error()),
             result = query.execute(&mut *tx) => result.map(|_| ()).map_err(FileSearchError::from),
         };
         let inserted = inserted.and_then(|()| {
             if cancelled.is_cancelled() {
-                Err(super::local_files::cancelled_error())
+                Err(cancelled_upload_error())
             } else {
                 Ok(())
             }
@@ -119,15 +130,27 @@ impl FileSearchStorage {
         }
         // Complete COMMIT even if the caller cancels at this point. The owned
         // operation task preserves the blob whenever the outcome is uncertain.
-        tx.commit().await.map_err(FilePublicationFailure::Indeterminate)
+        tx.commit()
+            .await
+            .map_err(|error| FilePublicationFailure::Indeterminate(error.into()))
     }
 
     pub(crate) async fn file(&self, id: &str) -> Result<UploadedFile, FileSearchError> {
-        sqlx::query_as("SELECT data, content_type, content_base64 FROM file_search_files WHERE id = $1")
-            .bind(id)
-            .fetch_optional(self.pool.as_ref())
-            .await?
-            .ok_or_else(|| FileSearchError::NotFound("File not found".into()))
+        let row: (String, String, String) =
+            sqlx::query_as("SELECT data, content_type, content_base64 FROM file_search_files WHERE id = $1")
+                .bind(id)
+                .fetch_optional(self.pool.as_ref())
+                .await?
+                .ok_or_else(|| FileSearchError::NotFound("File not found".into()))?;
+        Ok(UploadedFile {
+            object: serde_json::from_str(&row.0)?,
+            content_type: row.1,
+            content: if row.2.is_empty() {
+                StoredFileContent::Blob
+            } else {
+                StoredFileContent::LegacyInlineBase64(row.2)
+            },
+        })
     }
 
     pub(crate) async fn file_object(&self, id: &str) -> Result<FileObject, FileSearchError> {
@@ -140,7 +163,7 @@ impl FileSearchStorage {
     }
 
     pub(crate) async fn store(&self, id: &str) -> Result<StoredVectorStore, FileSearchError> {
-        sqlx::query_as("SELECT data, embedding_identity, embedding_dimensions FROM file_search_stores WHERE id = $1")
+        sqlx::query_as("SELECT embedding_identity, embedding_dimensions FROM file_search_stores WHERE id = $1")
             .bind(id)
             .fetch_optional(self.pool.as_ref())
             .await?
@@ -148,8 +171,12 @@ impl FileSearchStorage {
     }
 
     pub(crate) async fn store_object(&self, id: &str) -> Result<VectorStoreObject, FileSearchError> {
-        let row = self.store(id).await?;
-        let mut store: VectorStoreObject = serde_json::from_str(&row.data)?;
+        let data: String = sqlx::query_scalar("SELECT data FROM file_search_stores WHERE id = $1")
+            .bind(id)
+            .fetch_optional(self.pool.as_ref())
+            .await?
+            .ok_or_else(|| FileSearchError::NotFound("Vector store not found".into()))?;
+        let mut store: VectorStoreObject = serde_json::from_str(&data)?;
         let (count, bytes): (i64, i64) = sqlx::query_as("SELECT COUNT(*), CAST(COALESCE(SUM(usage_bytes), 0) AS BIGINT) FROM file_search_attachments WHERE store_id = $1")
             .bind(id).fetch_one(self.pool.as_ref()).await?;
         store.file_counts.completed = count;
@@ -285,6 +312,20 @@ impl FileSearchStorage {
         rows.iter()
             .map(|row| serde_json::from_str(row).map_err(Into::into))
             .collect()
+    }
+
+    /// Checks whether selected stores contain indexed chunks.
+    pub(crate) async fn has_chunks(&self, store_ids: &[String]) -> Result<bool, FileSearchError> {
+        let placeholders = (1..=store_ids.len())
+            .map(|index| format!("${index}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!("SELECT 1 FROM file_search_chunks WHERE store_id IN ({placeholders}) LIMIT 1");
+        let mut query = sqlx::query_scalar::<_, i64>(&sql);
+        for id in store_ids {
+            query = query.bind(id);
+        }
+        Ok(query.fetch_optional(self.pool.as_ref()).await?.is_some())
     }
 
     /// Streaming row decoding bounds corpus memory before deserializing vectors.

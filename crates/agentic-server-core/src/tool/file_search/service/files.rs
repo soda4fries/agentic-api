@@ -2,9 +2,10 @@
 
 use super::{
     Arc, CancellationToken, Collection, DeleteObject, FileObject, FilePublicationFailure, FileSearchError,
-    FileSearchService, ListParams, ListResponse, LocalFiles, MAX_FILE_BYTES, OwnedSemaphorePermit, decode_content,
-    deleted, invalid, page, size_i64, validate_list,
+    FileSearchService, ListParams, ListResponse, MAX_FILE_BYTES, OwnedSemaphorePermit, decode_content, deleted,
+    invalid, page, size_i64, validate_file_id, validate_list,
 };
+use crate::storage::file_search::StoredFileContent;
 
 impl FileSearchService {
     /// Stores uploaded bytes locally and publishes their SQL metadata afterwards.
@@ -50,13 +51,13 @@ impl FileSearchService {
         tokio::spawn(async move {
             let _permit = permit;
             files.publish(&file.id, &bytes, &cancelled).await?;
-            match storage.upload(&file, &content_type, &cancelled).await {
+            match storage.upload_file_metadata(&file, &content_type, &cancelled).await {
                 Ok(()) => Ok(file),
                 Err(FilePublicationFailure::SafeToRemove(error)) => {
                     files.remove(&file.id).await?;
                     Err(error)
                 }
-                Err(FilePublicationFailure::Indeterminate(error)) => Err(error.into()),
+                Err(FilePublicationFailure::Indeterminate(error)) => Err(error),
             }
         })
         .await?
@@ -67,7 +68,7 @@ impl FileSearchService {
     pub async fn list_files(&self, params: &ListParams) -> Result<ListResponse<FileObject>, FileSearchError> {
         validate_list(params)?;
         Ok(page(
-            self.storage.list(Collection::Files, None, params).await?,
+            self.storage.list_files(params).await?,
             params,
             |file: &FileObject| &file.id,
         ))
@@ -76,7 +77,7 @@ impl FileSearchService {
     /// # Errors
     /// Returns not-found or storage errors.
     pub async fn get_file(&self, id: &str) -> Result<FileObject, FileSearchError> {
-        LocalFiles::validate_id(id)?;
+        validate_file_id(id)?;
         self.storage.file_object(id).await
     }
 
@@ -84,10 +85,9 @@ impl FileSearchService {
     /// Returns not-found, resource-limit, or storage errors.
     pub async fn file_content(&self, id: &str) -> Result<Vec<u8>, FileSearchError> {
         let permit = self.permit()?;
-        LocalFiles::validate_id(id)?;
+        validate_file_id(id)?;
         let file = self.storage.file(id).await?;
-        let object: FileObject = serde_json::from_str(&file.data)?;
-        self.read_content(id, object.bytes, file.content_base64, permit).await
+        self.read_content(id, file.object.bytes, file.content, permit).await
     }
 
     /// Atomically deletes metadata, attachments, and chunks, then removes the local blob.
@@ -95,7 +95,7 @@ impl FileSearchService {
     /// # Errors
     /// Returns not-found or storage errors.
     pub async fn delete_file(&self, id: &str) -> Result<DeleteObject, FileSearchError> {
-        LocalFiles::validate_id(id)?;
+        validate_file_id(id)?;
         let permit = self.permit()?;
         let storage = self.storage.clone();
         let files = self.files.clone();
@@ -106,7 +106,7 @@ impl FileSearchService {
             let _permit = permit;
             let file = storage.file(&id).await?;
             storage.delete(Collection::Files, &id, None).await?;
-            if file.content_base64.is_empty() {
+            if matches!(file.content, StoredFileContent::Blob) {
                 files.remove(&id).await?;
             }
             Ok(deleted(&id, "file.deleted"))
@@ -118,22 +118,26 @@ impl FileSearchService {
         &self,
         id: &str,
         expected_bytes: i64,
-        legacy: String,
+        content: StoredFileContent,
         permit: Arc<OwnedSemaphorePermit>,
     ) -> Result<Vec<u8>, FileSearchError> {
-        if legacy.is_empty() {
-            let files = self.files.clone();
-            let id = id.to_owned();
-            return tokio::spawn(async move {
-                let _permit = permit;
-                files.read(&id, expected_bytes, MAX_FILE_BYTES).await
-            })
-            .await?;
+        match content {
+            StoredFileContent::Blob => {
+                let files = self.files.clone();
+                let id = id.to_owned();
+                tokio::spawn(async move {
+                    let _permit = permit;
+                    files.read(&id, expected_bytes, MAX_FILE_BYTES).await
+                })
+                .await?
+            }
+            StoredFileContent::LegacyInlineBase64(legacy) => {
+                tokio::task::spawn_blocking(move || {
+                    let _permit = permit;
+                    decode_content(&legacy)
+                })
+                .await?
+            }
         }
-        tokio::task::spawn_blocking(move || {
-            let _permit = permit;
-            decode_content(&legacy)
-        })
-        .await?
     }
 }

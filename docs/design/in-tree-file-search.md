@@ -28,6 +28,11 @@ executor and shared persistence layer.
   Replicas require both a shared database and a shared file directory.
 - `tool/file_search/service.rs` owns ingestion and retrieval orchestration;
   focused sibling modules own embeddings, parsing/chunking, and ranking.
+- `tool/file_search/provider.rs` defines typed repository and blob-store
+  contracts. The service receives both as injected dependencies. The default
+  repository uses portable SQL and exact ranking; an index-backed adapter can
+  rank candidates in its own database. The default blob store uses local files,
+  including a mounted PVC. Cross-system adapters own recovery for partial writes.
 - `tool/file_search/handler.rs` implements the existing typed tool interfaces.
 - HTTP handlers call core service methods through `ExecutionContext`; they do
   not import the storage layer.
@@ -54,7 +59,7 @@ limit and score threshold. Semantic, keyword, and hybrid retrieval are supported
 hybrid fusion uses reciprocal rank fusion with configurable signal weights.
 
 Embedding configuration is deployment-controlled. Validate embedding count,
-indexes, dimensions, and finite values. Persist the embedding model identity and
+indexes, dimensions, and finite values. Persist the provider and embedding identities and
 dimension with each store and reject incompatible configurations. Bound file
 size, extracted text, chunk counts, request fan-out, outbound response size, and
 embedding batch sizes. CPU-heavy extraction and scoring run off the async runtime.

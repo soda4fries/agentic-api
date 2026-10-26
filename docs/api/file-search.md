@@ -45,9 +45,39 @@ variables `AGENTIC_FILE_SEARCH_EMBEDDING_BASE_URL`,
 override these settings. The generation model and embedding model can be served
 by separate processes.
 
-A vector store records its embedding endpoint, model, and vector dimensions.
-Changing that configuration requires a new store and reingestion for semantic
-search. Existing stores remain available for keyword search.
+A vector store records its search provider identity, embedding endpoint, model,
+and vector dimensions. Changing the provider or embedding configuration requires
+a new store and reingestion. The default SQL repository preserves the identities
+of stores created before provider injection was added.
+
+## Integrate storage providers
+
+`FileSearchService::new` uses the existing SQLite or PostgreSQL pool for file
+metadata, vector stores, attachments, and exact chunk retrieval, plus the local
+filesystem for uploaded bytes. A persistent volume claim (PVC) mounted at the
+configured files directory uses this same local-files implementation.
+
+Rust integrations can instead supply implementations of `FileSearchRepository`
+and `FileBlobStore` through `FileSearchService::with_providers`, then install the
+service with `ExecutionContext::with_file_search_service`. Both the HTTP routes
+and the Responses `file_search` built-in tool use that service. A repository
+adapter can compose SQL metadata with Milvus, sqlite-vec, or another vector
+index; a blob-store adapter can use S3, GCS, or Azure Blob Storage. This release
+provides the contracts and SQL/local implementations, not those remote adapters
+or a configuration-file provider catalog.
+
+Repository implementations must publish an attachment only after its chunks
+are searchable, keep store embedding identities and dimensions compatible, and
+remove indexed chunks on deletion. When metadata and an external index cannot
+share a transaction, the adapter needs a durable recovery or compensation path
+for partial publication and deletion. Blob stores must create objects under
+generated file IDs without replacing existing bytes, validate bounded reads,
+and make deletion idempotent. The service retains a local metadata fallback for
+uploads stored inline by an earlier draft.
+Each external repository supplies a stable, nonempty `index_identity`; changing
+it makes existing vector stores incompatible until they are reingested.
+Switching blob-store providers also requires migrating the existing uploaded
+objects or pointing the new provider at the same object namespace.
 
 ## Upload and ingest
 

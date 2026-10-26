@@ -12,21 +12,20 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio_util::sync::CancellationToken;
 
-use super::{embeddings::Embeddings, ingest, ranking};
+use super::{
+    embeddings::Embeddings,
+    ingest,
+    provider::{FileBlobStore, FileSearchRepository},
+};
 
 mod files;
+mod setup;
 use crate::{
-    storage::{
-        DbPool,
-        file_search::{
-            Collection, FilePublicationFailure, FileSearchStorage, PreparedAttachment, StoredChunk, StoredVectorStore,
-        },
-        local_files::LocalFiles,
-    },
+    storage::file_search::{Collection, FilePublicationFailure, PreparedAttachment, StoredChunk, StoredVectorStore},
     types::file_search::{
         AttachFileRequest, ChunkingStrategy, CreateVectorStoreRequest, DeleteObject, FileAttributes, FileCounts,
-        FileObject, FileSearchConfig, FileSearchError, ListParams, ListResponse, SearchMode, SearchQuery,
-        SearchRequest, SearchResponse, VectorStoreFileObject, VectorStoreObject, invalid, validate_attributes,
+        FileObject, FileSearchError, ListParams, ListResponse, SearchMode, SearchQuery, SearchRequest, SearchResponse,
+        VectorStoreFileObject, VectorStoreObject, invalid, validate_attributes, validate_file_id,
     },
 };
 
@@ -41,11 +40,11 @@ impl Drop for CancelIngestionOnDrop {
     }
 }
 
-/// In-tree exact retrieval over persistent SQL storage.
+/// File search over interchangeable persistence and blob stores.
 #[derive(Clone)]
 pub struct FileSearchService {
-    storage: FileSearchStorage,
-    files: LocalFiles,
+    storage: Arc<dyn FileSearchRepository>,
+    files: Arc<dyn FileBlobStore>,
     embeddings: Option<Embeddings>,
     workers: Arc<Semaphore>,
 }
@@ -60,33 +59,6 @@ impl std::fmt::Debug for FileSearchService {
 }
 
 impl FileSearchService {
-    /// Creates a service; no embeddings configuration selects keyword retrieval.
-    ///
-    /// # Errors
-    /// Returns invalid-request when embedding configuration is incomplete or malformed.
-    #[allow(
-        clippy::needless_pass_by_value,
-        reason = "the shared service constructor owns deployment configuration"
-    )]
-    pub fn new(
-        pool: Arc<DbPool>,
-        client: Arc<reqwest::Client>,
-        config: FileSearchConfig,
-    ) -> Result<Self, FileSearchError> {
-        let directory = match &config.files_storage_dir {
-            Some(directory) => directory.clone(),
-            None => crate::config::agentic_api_home()
-                .map_err(|error| FileSearchError::Configuration(Box::new(error)))?
-                .join("files"),
-        };
-        Ok(Self {
-            storage: FileSearchStorage::new(pool),
-            files: LocalFiles::new(directory)?,
-            embeddings: Embeddings::from_config(client, &config)?,
-            workers: Arc::new(Semaphore::new(4)),
-        })
-    }
-
     fn permit(&self) -> Result<Arc<OwnedSemaphorePermit>, FileSearchError> {
         self.workers
             .clone()
@@ -96,14 +68,25 @@ impl FileSearchService {
     }
 
     fn identity(&self) -> String {
-        self.embeddings
+        let embedding = self
+            .embeddings
             .as_ref()
-            .map_or_else(|| "keyword:cl100k_base:v1".into(), Embeddings::identity)
+            .map_or_else(|| "keyword:cl100k_base:v1".into(), Embeddings::identity);
+        setup::scoped_identity(self.storage.index_identity(), &embedding)
     }
 
     fn compatible(&self, store: &StoredVectorStore) -> Result<(), FileSearchError> {
         if store.embedding_identity != self.identity() {
             return Err(FileSearchError::Conflict("Vector store was created with a different embedding configuration; restore that configuration or create a new vector store".into()));
+        }
+        Ok(())
+    }
+
+    fn compatible_index(&self, store: &StoredVectorStore) -> Result<(), FileSearchError> {
+        if !setup::same_index(self.storage.index_identity(), &store.embedding_identity) {
+            return Err(FileSearchError::Conflict(
+                "Vector store was created with a different search provider; restore that provider or create a new vector store".into(),
+            ));
         }
         Ok(())
     }
@@ -187,7 +170,7 @@ impl FileSearchService {
         params: &ListParams,
     ) -> Result<ListResponse<VectorStoreObject>, FileSearchError> {
         validate_list(params)?;
-        let stores: Vec<VectorStoreObject> = self.storage.list(Collection::Stores, None, params).await?;
+        let stores: Vec<VectorStoreObject> = self.storage.list_stores(params).await?;
         let mut page = page(stores, params, |store| &store.id);
         for store in &mut page.data {
             *store = self.storage.store_object(&store.id).await?;
@@ -243,11 +226,11 @@ impl FileSearchService {
         permit: Arc<OwnedSemaphorePermit>,
     ) -> Result<PreparedAttachment, FileSearchError> {
         validate_attributes(&request.attributes)?;
-        LocalFiles::validate_id(&request.file_id)?;
+        validate_file_id(&request.file_id)?;
         let uploaded = self.storage.file(&request.file_id).await?;
-        let file: FileObject = serde_json::from_str(&uploaded.data)?;
+        let file = uploaded.object;
         let bytes = self
-            .read_content(&request.file_id, file.bytes, uploaded.content_base64, permit.clone())
+            .read_content(&request.file_id, file.bytes, uploaded.content, permit.clone())
             .await?;
         let strategy = request.chunking_strategy.unwrap_or_default();
         let chunking = ingest::chunking_config(&strategy)?;
@@ -313,9 +296,7 @@ impl FileSearchService {
         validate_list(params)?;
         self.storage.store(store_id).await?;
         Ok(page(
-            self.storage
-                .list(Collection::Attachments, Some(store_id), params)
-                .await?,
+            self.storage.list_attachments(store_id, params).await?,
             params,
             |file: &VectorStoreFileObject| &file.id,
         ))
@@ -381,6 +362,7 @@ impl FileSearchService {
         let mut dimensions = None;
         for id in store_ids {
             let store = self.storage.store(id).await?;
+            self.compatible_index(&store)?;
             if mode != SearchMode::Keyword {
                 self.compatible(&store)?;
                 if store.embedding_dimensions != 0 {
@@ -395,43 +377,42 @@ impl FileSearchService {
                 }
             }
         }
-        let chunks = self.storage.chunks(store_ids).await?;
-        if mode != SearchMode::Keyword {
-            for chunk in &chunks {
-                let vector = chunk.embedding.as_ref().ok_or_else(|| {
-                    FileSearchError::Unavailable("Stored embeddings are missing; recreate this vector store".into())
-                })?;
-                if dimensions.is_some_and(|expected| expected != vector.len())
-                    || vector.is_empty()
-                    || vector.iter().any(|value| !value.is_finite())
-                {
-                    return Err(FileSearchError::Unavailable(
-                        "Stored embeddings are incompatible; recreate this vector store".into(),
-                    ));
-                }
-                dimensions = Some(vector.len());
-            }
-        }
+        let has_chunks = if mode == SearchMode::Keyword {
+            false
+        } else {
+            self.storage.has_chunks(store_ids).await?
+        };
         let queries = match &request.query {
             SearchQuery::Text(query) => vec![query.clone()],
             SearchQuery::Texts(queries) => queries.clone(),
         };
-        let vectors = if mode == SearchMode::Keyword || chunks.is_empty() {
-            Vec::new()
-        } else {
+        let vectors = if has_chunks {
             let embeddings = self
                 .embeddings
                 .as_ref()
                 .ok_or_else(|| FileSearchError::Unavailable("Embeddings are not configured".into()))?;
             embeddings.embed(&queries, dimensions).await?
+        } else {
+            Vec::new()
         };
+        let storage = Arc::clone(&self.storage);
+        let worker_store_ids = store_ids.to_vec();
         let worker_queries = queries.clone();
-        let request = request.clone();
-        let data = tokio::task::spawn_blocking(move || {
+        let worker_request = request.clone();
+        let data = tokio::spawn(async move {
             let _permit = permit;
-            ranking::rank(chunks, &worker_queries, &vectors, mode, &request)
+            storage
+                .search(
+                    &worker_store_ids,
+                    &worker_queries,
+                    &vectors,
+                    dimensions,
+                    mode,
+                    &worker_request,
+                )
+                .await
         })
-        .await?;
+        .await??;
         Ok(SearchResponse {
             object: "vector_store.search_results.page".into(),
             search_query: queries,
@@ -499,6 +480,7 @@ fn page<T>(mut data: Vec<T>, params: &ListParams, id: impl Fn(&T) -> &str) -> Li
 #[cfg(test)]
 mod local_file_tests {
     use super::*;
+    use crate::types::file_search::FileSearchConfig;
 
     #[test]
     fn cancelled_local_read_retains_capacity_until_filesystem_io_finishes() {
@@ -532,8 +514,12 @@ mod local_file_tests {
                 resume_receiver.recv().unwrap();
             });
             waiting.await.unwrap();
-            let mut read =
-                Box::pin(service.read_content(&file.id, file.bytes, String::new(), service.permit().unwrap()));
+            let mut read = Box::pin(service.read_content(
+                &file.id,
+                file.bytes,
+                crate::storage::file_search::StoredFileContent::Blob,
+                service.permit().unwrap(),
+            ));
             assert!(
                 tokio::time::timeout(std::time::Duration::from_millis(20), &mut read)
                     .await
