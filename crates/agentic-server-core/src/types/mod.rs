@@ -9,9 +9,9 @@ pub mod request_response;
 pub mod tools;
 
 pub use conversations::{
-    ConversationResponse, CreateConversationRequest, CreateItemRequest, DeletedResponse, ItemResponse,
-    ListItemsResponse, UpdateConversationRequest,
+    ConversationResponse, CreateConversationRequest, CreateItemRequest, UpdateConversationRequest,
 };
+
 pub use io::{
     AllowedTool, AllowedToolsMode, CodeInterpreterCall, CodeInterpreterCallOutput, CodeInterpreterCallStatus,
     CodeInterpreterCallStreamEvent, CompactionItem, CustomToolCall, CustomToolCallOutputMessage, FunctionTool,
@@ -26,6 +26,7 @@ pub use io::{
     WebSearchActionFindInPage, WebSearchActionOpenPage, WebSearchActionSearch, WebSearchCall, WebSearchCallStatus,
     WebSearchSource,
 };
+pub use io::{DeletedResponse, ListItemsResponse};
 pub use request_response::{
     CompactRequest, CompactedResponse, ContextManagement, IncompleteDetails, ReasoningConfig, RequestPayload,
     ResponsePayload, ResponseTextConfig, ResponseTextFormat, UpstreamRequest, UpstreamTool,
