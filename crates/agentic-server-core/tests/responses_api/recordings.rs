@@ -278,6 +278,22 @@ fn deferred_tool_status_defaults_do_not_hide_other_statuses() {
 }
 
 #[test]
+fn optional_item_nulls_do_not_hide_values() {
+    for (kind, field, value) in [
+        ("reasoning", "encrypted_content", "opaque-state"),
+        ("reasoning", "status", "incomplete"),
+        ("message", "phase", "final_answer"),
+    ] {
+        let absent = json!({"type": kind});
+        let mut recorded = absent.clone();
+        recorded[field] = Value::Null;
+        assert_eq!(item_signature(&absent), item_signature(&recorded));
+        recorded[field] = json!(value);
+        assert_ne!(item_signature(&absent), item_signature(&recorded));
+    }
+}
+
+#[test]
 fn error_metadata_comparison_detects_each_field() {
     let body = json!({"error":{"type":"invalid_request_error","code":"invalid_value","param":"limit"}});
     for field in ["type", "code", "param"] {
