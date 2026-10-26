@@ -432,6 +432,8 @@ async fn test_previous_response_id_rehydrates_function_call_before_tool_output()
 
     let mut second = make_request("ignored", true, false, Some(p1.id), None);
     second.input = ResponsesInput::from(vec![InputItem::FunctionCallOutput(FunctionToolResultMessage {
+        id: None,
+        status: None,
         call_id: "call_1".to_string(),
         output: "{\"stdout\":\"/workspace\"}".into(),
     })]);
@@ -494,6 +496,8 @@ async fn test_encrypted_only_persisted_reasoning_fails_before_upstream() {
     for stream in [false, true] {
         let mut continuation = make_request("continue", true, stream, Some(first.id.clone()), None);
         continuation.input = ResponsesInput::from(vec![InputItem::FunctionCallOutput(FunctionToolResultMessage {
+            id: None,
+            status: None,
             call_id: "call_prior".to_owned(),
             output: "tool output".into(),
         })]);
@@ -1005,7 +1009,10 @@ async fn tool_search_store_false_manual_replay_completes_without_reusable_respon
         .get(&lookup_ctx)
         .await
         .expect_err("store:false response ID must not be reusable");
-    assert!(matches!(error, agentic_core::executor::ExecutorError::Storage(source) if source.is_not_found()));
+    assert!(matches!(
+        error,
+        ExecutorError::Storage(StorageError::PreviousResponseNotFound { .. })
+    ));
 }
 
 #[tokio::test]
@@ -1226,6 +1233,8 @@ fn upstream_mcp_fixture_call(id: &str, call_id: &str, name: &str, arguments: &st
 
 fn tool_output(call_id: &str, output: &str) -> InputItem {
     InputItem::FunctionCallOutput(FunctionToolResultMessage {
+        id: None,
+        status: None,
         call_id: call_id.to_string(),
         output: output.into(),
     })
