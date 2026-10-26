@@ -107,13 +107,8 @@ async fn response_body(response: reqwest::Response, stream: bool) -> Value {
 }
 
 fn load_cassette(scenario: &str, provider: &str, mode: &str) -> Value {
-    let path = format!("{DIR}/store-false-{provider}-{mode}.yaml");
-    let mut cassette: Value = serde_yml::from_str(&std::fs::read_to_string(path).expect("recorded cassette")).unwrap();
-    cassette["cases"]
-        .as_object_mut()
-        .expect("named cassette scenarios")
-        .remove(scenario)
-        .expect("recorded scenario")
+    let path = format!("{DIR}/store-false-{scenario}-{provider}-{mode}.yaml");
+    serde_yml::from_str(&std::fs::read_to_string(path).expect("recorded cassette")).unwrap()
 }
 
 async fn replay(scenario: &str, provider: &str, stream: bool) {

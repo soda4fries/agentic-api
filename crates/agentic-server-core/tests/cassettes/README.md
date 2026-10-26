@@ -698,14 +698,14 @@ cargo test -p agentic-server --test responses_test recorded_store_false_
 
 The shell wrapper uses `record_cassette.py` for every captured request and response.
 It derives follow-up input from captured outputs and reuses the existing pipeline
-function declarations and output fixtures. All twelve scenario recordings are staged
-before being grouped into two files in `store_false/`, one per transport mode.
-Each file has a `cases` mapping containing `manual-replay`, `stored-parent`,
-`unstored-parent`, `conversation`, `function-replay`, and `conversation-items`.
-Each scenario retains its original `turns` and runs against an isolated gateway in
-the replay tests. Grouping preserves every recorded request, response, and SSE line.
+function declarations and output fixtures. Each scenario is recorded to its own
+standard `turns:` YAML in `store_false/`: `manual-replay`, `stored-parent`,
+`unstored-parent`, `conversation`, `function-replay`, and `conversation-items`,
+each in JSON and SSE mode. Filenames follow
+`store-false-SCENARIO-PROVIDER-MODEL-MODE.yaml`. Each scenario runs against an
+isolated gateway in the replay tests. Temporary follow-up input is created under
+`TMPDIR` (normally `/tmp`) and removed when the recorder exits.
 The default model is `gpt-4o`; the replay tests use those filenames.
-Use `--combine-existing` to migrate individual scenario files without new API calls.
 
 To record a running gateway backed by vLLM, select `STORE_FALSE_RECORD_SET=gateway`
 and set `GATEWAY_MODEL` to the served model name. It takes precedence over `MODEL`,
@@ -718,7 +718,7 @@ uv run --no-project --with click --with fastapi --with httpx --with uvicorn --wi
   bash crates/agentic-server-core/tests/cassettes/record_store_false_cassettes.sh
 ```
 
-Gateway captures use `store-false-gateway-MODEL-MODE.yaml` filenames,
+Gateway captures use `store-false-SCENARIO-gateway-MODEL-MODE.yaml` filenames,
 leaving OpenAI references intact. This uses the existing recorder's unauthenticated
 `--gateway` mode; run a local gateway with authentication disabled and database
 storage enabled for the stored-parent and conversation cases. No OpenAI key is

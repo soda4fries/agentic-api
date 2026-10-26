@@ -12,50 +12,17 @@
 # Records JSON and SSE: full-history replay, stored/unstored parent references,
 # explicit conversations, item-listing persistence probes, and a client-executed
 # function with full-history replay.
-# Input fixtures are derived from actual captured outputs. Captures from
-# record_cassette.py are grouped without changing their recorded exchanges.
-# Use --combine-existing to group existing captures without contacting providers.
+# Each scenario has its own standard turns-based YAML from record_cassette.py.
+# Follow-up input is derived from actual captured outputs.
 set -euo pipefail
 
 SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE_DIR="$SCRIPTS_DIR/store_false"
 
-combine_cassettes() {
-  python - "$1" "$2" <<'PY'
-import sys, textwrap, yaml
-from pathlib import Path
-source, destination = map(Path, sys.argv[1:])
-scenarios = ('manual-replay', 'stored-parent', 'unstored-parent',
-             'conversation', 'function-replay', 'conversation-items')
-originals = []
-bundles = []
-for first in sorted(source.glob('store-false-manual-replay-*.yaml')):
-    suffix = first.name.removeprefix('store-false-manual-replay-')
-    expected = {}
-    sections = ['cases:\n']
-    for scenario in scenarios:
-        path = source / f'store-false-{scenario}-{suffix}'
-        captured = path.read_text()
-        expected[scenario] = yaml.safe_load(captured)
-        sections.append(f'  {scenario}:\n' + textwrap.indent(captured, '    '))
-        originals.append(path)
-    combined = ''.join(sections)
-    assert yaml.safe_load(combined) == {'cases': expected}, suffix
-    bundles.append((destination / f'store-false-{suffix}', combined))
-assert bundles, f'No individual store:false captures found in {source}'
-for path, combined in bundles:
-    path.write_text(combined)
-for path in originals:
-    path.unlink()
-print(f'Combined {len(originals)} captures into {len(bundles)} files in {destination}')
-PY
-}
-
-case "${1:-}" in
-  --combine-existing) combine_cassettes "$BASE_DIR" "$BASE_DIR"; exit 0 ;;
-  '') ;;
-  *) echo 'Usage: record_store_false_cassettes.sh [--combine-existing]' >&2; exit 1 ;;
-esac
+if (( $# > 0 )); then
+  echo 'Usage: record_store_false_cassettes.sh' >&2
+  exit 1
+fi
 
 STORE_FALSE_RECORD_SET="${STORE_FALSE_RECORD_SET:-openai}"
 case "$STORE_FALSE_RECORD_SET" in
@@ -80,8 +47,8 @@ MODEL_SLUG="$(printf '%s' "$MODEL" | tr '/: ' '---')"
 TOOLS="$SCRIPTS_DIR/tool_calls/multi_turn/pipeline_tools.json"
 TOOL_OUTPUTS="$SCRIPTS_DIR/tool_calls/multi_turn/pipeline_tool_outputs.json"
 mkdir -p "$BASE_DIR"
-STAGING_DIR="$(mktemp -d "$BASE_DIR/.recording.XXXXXX")"
-trap 'rm -rf -- "$STAGING_DIR"' EXIT
+INPUT_DIR="$(mktemp -d)"
+trap 'rm -rf -- "$INPUT_DIR"' EXIT
 RECORDER=(python "$SCRIPTS_DIR/record_cassette.py" "${BACKEND[@]}" --model "$MODEL" --max-output-tokens "$MAX_OUTPUT_TOKENS")
 FIRST_PROMPT='Remember the word ORCHID. Reply with exactly OK.'
 SECOND_PROMPT='What word did I ask you to remember? Reply with that word only.'
@@ -143,12 +110,12 @@ for stream_mode in nonstreaming streaming; do
   STREAM_FLAG=--no-stream
   [[ "$stream_mode" == streaming ]] && STREAM_FLAG=--stream
 
-  output="$STAGING_DIR/store-false-manual-replay-${STORE_FALSE_RECORD_SET}-${MODEL_SLUG}-${stream_mode}.yaml"
+  output="$BASE_DIR/store-false-manual-replay-${STORE_FALSE_RECORD_SET}-${MODEL_SLUG}-${stream_mode}.yaml"
   printf '%s\n' "$FIRST_PROMPT" | "${RECORDER[@]}" --mode responses --turns 1 "$STREAM_FLAG" --no-store --output "$output"
-  captured_input "$output" replay > "$STAGING_DIR/input.json"
-  "${RECORDER[@]}" --mode responses --turns 1 "$STREAM_FLAG" --no-store --append --output "$output" --input-file "$STAGING_DIR/input.json"
+  captured_input "$output" replay > "$INPUT_DIR/input.json"
+  "${RECORDER[@]}" --mode responses --turns 1 "$STREAM_FLAG" --no-store --append --output "$output" --input-file "$INPUT_DIR/input.json"
 
-  output="$STAGING_DIR/store-false-stored-parent-${STORE_FALSE_RECORD_SET}-${MODEL_SLUG}-${stream_mode}.yaml"
+  output="$BASE_DIR/store-false-stored-parent-${STORE_FALSE_RECORD_SET}-${MODEL_SLUG}-${stream_mode}.yaml"
   printf '%s\n' "$FIRST_PROMPT" | "${RECORDER[@]}" --mode responses --turns 1 "$STREAM_FLAG" --output "$output"
   parent_id="$(captured_input "$output" id)"
   printf '%s\n' "$SECOND_PROMPT" | "${RECORDER[@]}" --mode responses --turns 1 "$STREAM_FLAG" --no-store --append --output "$output" \
@@ -156,26 +123,24 @@ for stream_mode in nonstreaming streaming; do
   child_id="$(captured_input "$output" id)"
   missing_parent "$output" "$child_id"
 
-  output="$STAGING_DIR/store-false-unstored-parent-${STORE_FALSE_RECORD_SET}-${MODEL_SLUG}-${stream_mode}.yaml"
+  output="$BASE_DIR/store-false-unstored-parent-${STORE_FALSE_RECORD_SET}-${MODEL_SLUG}-${stream_mode}.yaml"
   printf '%s\n' "$FIRST_PROMPT" | "${RECORDER[@]}" --mode responses --turns 1 "$STREAM_FLAG" --no-store --output "$output"
   parent_id="$(captured_input "$output" id)"
   missing_parent "$output" "$parent_id" --no-store
 
-  output="$STAGING_DIR/store-false-conversation-${STORE_FALSE_RECORD_SET}-${MODEL_SLUG}-${stream_mode}.yaml"
+  output="$BASE_DIR/store-false-conversation-${STORE_FALSE_RECORD_SET}-${MODEL_SLUG}-${stream_mode}.yaml"
   printf '%s\n' "$FIRST_PROMPT" | "${RECORDER[@]}" --mode conv --turns 1 "$STREAM_FLAG" --no-store --output "$output"
   conversation_id="$(captured_input "$output" conversation-id)"
   printf '%s\n' "$SECOND_PROMPT" | "${RECORDER[@]}" --mode responses --turns 1 "$STREAM_FLAG" --no-store --append --output "$output" \
     --request-overrides "{\"conversation\":\"$conversation_id\"}"
 
-  output="$STAGING_DIR/store-false-function-replay-${STORE_FALSE_RECORD_SET}-${MODEL_SLUG}-${stream_mode}.yaml"
+  output="$BASE_DIR/store-false-function-replay-${STORE_FALSE_RECORD_SET}-${MODEL_SLUG}-${stream_mode}.yaml"
   printf 'Call get_job_status for job-382, then reply with just its status.\n' | "${RECORDER[@]}" --mode responses --turns 1 \
     "$STREAM_FLAG" --no-store --output "$output" --tools "$TOOLS" --tool-choice '{"type":"function","name":"get_job_status"}'
-  captured_input "$output" tool-replay > "$STAGING_DIR/input.json"
+  captured_input "$output" tool-replay > "$INPUT_DIR/input.json"
   "${RECORDER[@]}" --mode responses --turns 1 "$STREAM_FLAG" --no-store --append --output "$output" \
-    --tools "$TOOLS" --tool-choice none --input-file "$STAGING_DIR/input.json"
+    --tools "$TOOLS" --tool-choice none --input-file "$INPUT_DIR/input.json"
 
-  output="$STAGING_DIR/store-false-conversation-items-${STORE_FALSE_RECORD_SET}-${MODEL_SLUG}-${stream_mode}.yaml"
+  output="$BASE_DIR/store-false-conversation-items-${STORE_FALSE_RECORD_SET}-${MODEL_SLUG}-${stream_mode}.yaml"
   "${RECORDER[@]}" --mode items --items-scenario store-false --turns 11 "$STREAM_FLAG" --output "$output"
 done
-
-combine_cassettes "$STAGING_DIR" "$BASE_DIR"

@@ -13,6 +13,7 @@ use std::sync::Arc;
 use tokio::process::{Child, Command};
 
 use agentic_core::events::normalize_sse_line;
+use agentic_core::types::io::InOutItem;
 use axum::{Json, Router, response::IntoResponse, routing::post};
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
@@ -88,18 +89,6 @@ fn map_request_ids(value: &mut Value, ids: &HashMap<String, String>) {
 fn item_signature(item: &Value) -> Value {
     let mut item = item.clone();
     item.as_object_mut().unwrap().remove("id");
-    // Older pass-through captures contain nulls that the typed items omit.
-    // Preserve every non-null value, including explicit lifecycle statuses.
-    let optional_fields: &[&str] = match item["type"].as_str() {
-        Some("reasoning") => &["encrypted_content", "status"],
-        Some("message") => &["phase"],
-        _ => &[],
-    };
-    for &field in optional_fields {
-        if item.get(field).is_some_and(Value::is_null) {
-            item.as_object_mut().unwrap().remove(field);
-        }
-    }
     // Missing tool-history status defaults are deferred to the item-type refactor.
     // Ignore only absence versus these recorded defaults; other statuses still differ.
     if matches!(
@@ -138,7 +127,20 @@ fn error_metadata(body: &Value) -> Value {
 fn compare_items(expected: &[Value], actual: &[Value], ids: &mut HashMap<String, String>, location: &str) {
     assert_eq!(expected.len(), actual.len(), "{location}: item count");
     for (left, right) in expected.iter().zip(actual) {
-        let mut expected = item_signature(left);
+        // Old pass-through recordings are model fixtures. Derive the expected
+        // public shape from the existing item contract; keep the actual wire
+        // response intact so unexpected nulls or missing values fail comparison.
+        let recorded: InOutItem = serde_json::from_value(left.clone()).expect("recorded input/output item");
+        let mut expected = item_signature(&serde_json::to_value(recorded).unwrap());
+        for (field, value) in item_signature(left).as_object().unwrap() {
+            if !value.is_null() {
+                assert_eq!(
+                    expected.get(field),
+                    Some(value),
+                    "{location}: recorded {field} must be preserved"
+                );
+            }
+        }
         let result_prefix = match left["type"].as_str() {
             Some("function_call_output") => Some("fc_"),
             Some("custom_tool_call_output") => Some("ctco_"),
