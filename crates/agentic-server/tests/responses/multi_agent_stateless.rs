@@ -1,8 +1,9 @@
-//! Run recorded client turns through the real HTTP gateway with recorded external dependencies.
+//! Replay recorded dependencies through the real HTTP gateway with live client continuations.
 #[path = "multi_agent_dependencies.rs"]
 mod dependencies;
 
 use agentic_core::utils::common::deserialize_from_value;
+use std::collections::HashMap;
 use std::fs::read_to_string;
 use std::path::Path;
 use std::sync::Arc;
@@ -51,6 +52,35 @@ fn terminal(response: &Value) -> Value {
         .clone()
 }
 
+// Match fixture commands exactly, but answer the calls emitted by this replay.
+fn shell_outputs(output: &Value, results: &HashMap<String, Value>) -> Vec<Value> {
+    let mut client_outputs = Vec::new();
+    for call in output
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|item| item["type"] == "shell_call")
+    {
+        let outputs: Vec<_> = call["action"]["commands"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|command| {
+                results
+                    .get(command.as_str().unwrap())
+                    .expect("recorded shell command")
+                    .clone()
+            })
+            .collect();
+        let mut result = json!({"type":"shell_call_output", "call_id":call["call_id"], "output":outputs});
+        if let Some(limit) = call["action"].get("max_output_length").filter(|limit| !limit.is_null()) {
+            result["max_output_length"] = limit.clone();
+        }
+        client_outputs.push(result);
+    }
+    client_outputs
+}
+
 async fn replay_mode(mode: &str, prune: bool) {
     let model = Dependencies::start(&format!("{DIR}/multi-agent-store-false-model-dependencies-{mode}.yaml")).await;
     let search = Dependencies::start(&format!(
@@ -76,21 +106,14 @@ async fn replay_mode(mode: &str, prune: bool) {
         ))),
     );
     let (url, gateway) = spawn_gateway(state).await;
-    let capture: Value = serde_yaml::from_str(
-        &read_to_string(format!(
-            "{DIR}/multi-agent-store-false-gateway-mixed-tools-Qwen-Qwen3.8-27B-FP8-{mode}.yaml"
-        ))
-        .unwrap(),
-    )
-    .unwrap();
+    let path = format!("{DIR}/multi-agent-store-false-gateway-mixed-tools-Qwen-Qwen3.8-27B-FP8-{mode}.yaml");
+    let capture: Value = serde_yaml::from_str(&read_to_string(path).unwrap()).unwrap();
+    let shell_results = model.shell_results().await;
+    let opening = capture["turns"][0]["request"]["body"].clone();
     let mut actual_turns = Vec::new();
-    let mut history = Vec::new();
-    let mut recorded_prefix = 0;
-    for turn in capture["turns"].as_array().unwrap() {
-        let mut request = turn["request"]["body"].clone();
-        let recorded_input = request["input"].as_array().unwrap();
-        history.extend_from_slice(&recorded_input[recorded_prefix..]);
-        recorded_prefix = recorded_input.len() + terminal(&turn["response"])["output"].as_array().unwrap().len();
+    let mut history = opening["input"].as_array().unwrap().clone();
+    for continuation in 0..=10 {
+        let mut request = opening.clone();
         request["input"] = json!(history);
         for tool in request["tools"].as_array_mut().unwrap() {
             if tool["type"] == "mcp" {
@@ -107,6 +130,7 @@ async fn replay_mode(mode: &str, prune: bool) {
                 input.drain(..checkpoint);
             }
         }
+        history = request["input"].as_array().unwrap().clone();
         let response = client
             .post(format!("{url}/v1/responses"))
             .bearer_auth("test-key")
@@ -135,8 +159,14 @@ async fn replay_mode(mode: &str, prune: bool) {
             .await
             .unwrap();
         assert_eq!(retrieval.status(), StatusCode::NOT_FOUND);
+        let client_outputs = shell_outputs(&payload["output"], &shell_results);
         history.extend_from_slice(payload["output"].as_array().unwrap());
         actual_turns.push(json!({"request":{"path":"/v1/responses","body":request},"response":response}));
+        if client_outputs.is_empty() {
+            break;
+        }
+        assert!(continuation < 10, "client-tool continuation limit exceeded");
+        history.extend(client_outputs);
     }
     assert_reference_contract(mode, &actual_turns).await;
     for table in ["responses", "items", "conversations"] {

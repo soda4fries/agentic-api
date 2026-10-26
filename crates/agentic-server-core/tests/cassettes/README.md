@@ -602,7 +602,7 @@ These files use `sessions`, not the HTTP `turns` schema or synthesized SSE.
 |--------|-----------|---------|
 | `record_multi_agent_cassettes.sh` | Five delegated scenarios over HTTP JSON/SSE or persistent duplex WebSocket | OpenAI and gateway |
 | `record_text_only_cassettes.sh` | 10 text-only cassettes (responses + conv modes, streaming + non-streaming) | OpenAI (`OPENAI_API_KEY`) |
-| `record_store_false_cassettes.sh` | Two HTTP `store:false` cassettes per provider (JSON/SSE), each containing six named scenarios | OpenAI and gateway |
+| `record_store_false_cassettes.sh` | Six HTTP scenarios per provider in JSON/SSE; `STORE_FALSE_SUITE=multi-agent` replays mixed tools against the selected provider | OpenAI and gateway |
 | `record_conversations_api_cassettes.sh` | 18 Conversation Items API cassettes: four history scenarios in both transports and one non-streaming edge-case sequence, each for both providers | OpenAI and gateway |
 | `record_reasoning_cassettes.sh` | Matching explicit-reasoning cassettes (streaming + non-streaming) | gateway and OpenAI reference; optional direct vLLM |
 | `record_tool_call_cassettes.sh` | 8 tool-call cassettes (4 tool_choice modes x streaming + non-streaming) | vLLM |
@@ -745,8 +745,13 @@ model text and reasoning differ, while state controls and function arguments
 are compared across providers.
 
 The same `store_false/` directory contains the multi-agent mixed-tools captures.
-Record them with `MULTI_AGENT_STORE=false MULTI_AGENT_SUITE=mixed-tools` using
-`record_multi_agent_cassettes.sh`; see the [multi-agent workflow](multi_agent/README.md).
+Record them with `STORE_FALSE_SUITE=multi-agent` using
+`record_store_false_cassettes.sh`; see the [multi-agent workflow](multi_agent/README.md).
+Both selections use `replay_old_cassettes.py` to load the existing mixed-tools
+request and the shared recorder to continue with live response history and matching
+shell outputs. Gateway mode connects to `GATEWAY_URL`; model and hosted-tool
+configuration belongs to the running gateway. This refreshes client-facing
+captures; model, search, and MCP dependency captures remain separate.
 The Rust multi-agent contract test compares full-history continuation, delegated
 agents, web/MCP activity, and client shell outputs across both providers in JSON and SSE.
 

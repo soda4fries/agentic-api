@@ -96,19 +96,22 @@ and final answers: a completed HTTP response alone does not establish task succe
 
 ### HTTP `store:false` characterization
 
-Use the existing mixed-tools workflow with `MULTI_AGENT_STORE=false` to send the
+Use `record_store_false_cassettes.sh` with `STORE_FALSE_SUITE=multi-agent` to send the
 complete accumulated public history on each HTTP continuation. The recorder
 preserves agent attribution, collaboration items and encrypted content, and adds
 matching simulated shell outputs without `previous_response_id`. It does not
-execute shell commands. This mode is scoped to `MULTI_AGENT_SUITE=mixed-tools`.
+execute shell commands. `replay_old_cassettes.py` loads the existing mixed-tools
+request, then the shared recorder continues from each live response. Gateway mode
+connects to the already-running service at `GATEWAY_URL`. Its existing model,
+web-search, and MCP configuration is used.
 
 ```bash
-MULTI_AGENT_RECORD_SET=openai MULTI_AGENT_SUITE=mixed-tools MULTI_AGENT_STORE=false \
-  bash crates/agentic-server-core/tests/cassettes/record_multi_agent_cassettes.sh
+STORE_FALSE_SUITE=multi-agent STORE_FALSE_RECORD_SET=openai \
+  bash crates/agentic-server-core/tests/cassettes/record_store_false_cassettes.sh
 
-MULTI_AGENT_RECORD_SET=gateway MULTI_AGENT_SUITE=mixed-tools MULTI_AGENT_STORE=false \
+STORE_FALSE_SUITE=multi-agent STORE_FALSE_RECORD_SET=gateway \
   GATEWAY_MODEL=Qwen/Qwen3.8-27B-FP8 \
-  bash crates/agentic-server-core/tests/cassettes/record_multi_agent_cassettes.sh
+  bash crates/agentic-server-core/tests/cassettes/record_store_false_cassettes.sh
 ```
 
 Files are written to `../store_false/` as
@@ -175,10 +178,17 @@ response retrieval returns 404, and assert zero response/item/conversation rows.
 They also reject missing or tampered compaction state before consuming any recorded
 dependency requests. The original OpenAI mixed-tools captures do not exercise
 compaction; they establish tool-call and continuation behavior, not compaction parity.
-Every recorded model and tool RPC must be consumed. Matching preserves request
+The live replay uses the refreshed client capture's opening request, then answers
+its own shell calls with results from the recorded model history. This preserves
+command/result pairing when an independent gateway recording uses different call IDs
+or a different number of client continuations. Every recorded model and tool RPC
+must be consumed. Matching preserves request
 content, tool arguments, and call IDs; it normalizes absent/null output-text
 `logprobs` to the canonical empty array and ignores generated item/JSON-RPC IDs and
-concurrent capacity/status notices. Unsupported MCP polling/teardown returns 405 without
+concurrent capacity/status notices. Legacy expected input is upgraded through the
+existing `ResponsesInput::into_canonical_items` conversion; actual result statuses
+remain strictly compared, including missing, null, or non-completed values.
+Unsupported MCP polling/teardown returns 405 without
 requiring timing-dependent request counts. No external services or credentials
 are needed to run the tests.
 
@@ -190,22 +200,25 @@ that file. The recorded gateway streams and both live replay turns must pass
 strict validation. Typed output-text parts normalize missing or null `logprobs`
 to `[]`, matching public SSE normalization while preserving populated arrays.
 
-To refresh the gateway client captures and their dependencies together, build the
-release gateway, start the served model, and export `YOU_API_KEY`. The existing
-recorder is orchestrated by this shell wrapper:
+To refresh the gateway client captures, start the release gateway and use the
+shared `store:false` shell script:
 
 ```bash
-AGENTIC_API_HOME=/path/to/.agentic-api \
-LLM_API_BASE=http://127.0.0.1:5050 \
+STORE_FALSE_SUITE=multi-agent STORE_FALSE_RECORD_SET=gateway \
+GATEWAY_URL=http://127.0.0.1:9000 \
 GATEWAY_MODEL=Qwen/Qwen3.8-27B-FP8 \
-bash crates/agentic-server-core/tests/cassettes/record_multi_agent_store_false_dependencies.sh
+bash crates/agentic-server-core/tests/cassettes/record_store_false_cassettes.sh
 ```
 
-The wrapper starts an isolated gateway on 19001 and recording proxies on
-17071/17073/17074/17075, stops its own processes afterward, and retains logs in a
-temporary directory. It uses the existing Python recorder dependencies and
-`PYTHON` override. `MULTI_AGENT_OUTPUT_DIR` can redirect the generated cassettes;
-validate both contract and HTTP replay tests before accepting new recordings.
+The recorder sends the existing mixed-tools opening request to the running gateway,
+then submits its live response history and matching simulated shell outputs with
+`store:false`. It preserves the multi-agent beta header and uses the existing
+`--manual-item-replay` continuation path. It uses the usual recorder dependencies
+and `PYTHON` override. `MULTI_AGENT_OUTPUT_DIR` can redirect the client captures.
+The model, search, and MCP dependency recordings consumed by the HTTP replay tests
+are separate captures and must match one another and the opening request.
+Client-facing recordings can be refreshed independently: live regression tests
+construct their continuations from the responses emitted by the test gateway.
 The OpenAI reference captures remain separate. Model names and answer wording
 can differ; these comparisons establish the mixed-tools continuation contract,
 not byte-identical responses or parity for every multi-agent feature.

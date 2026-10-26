@@ -1,4 +1,4 @@
-"""Replay existing tool scenarios through the shared recorder, then list inputs."""
+"""Replay existing tool scenarios through the shared recorder."""
 
 import copy
 import json
@@ -74,3 +74,27 @@ def run_tool_items(client, proxy_url, model, *, send_request, extract_tool_calls
             recorded = turn.get("response", {}).get("body")
             if recorded is not None:
                 responses[recorded["id"]] = result
+
+
+def run_multi_agent_store_false(client, proxy_url, model, stream, *, run_responses,
+                                load_tool_outputs, max_output_tokens=None):
+    """Replay the mixed-tools request using live responses for client-carried history."""
+    root = Path(__file__).parent
+    source = root / "multi_agent/multi-agent-openai-reference-mixed-tools-gpt-5.6-sol-nonstreaming.yaml"
+    request = yaml_load(source.read_text(encoding="utf-8"))["turns"][0]["request"]
+    body = request["body"]
+    client.headers.update({key: value for key, value in request["headers"].items()
+                           if key.lower() == "openai-beta"})
+    run_responses(
+        client, 1, model, stream, False, [], proxy_url,
+        tools=copy.deepcopy(body["tools"]),
+        tool_choice=body.get("tool_choice"),
+        parallel_tool_calls=body.get("parallel_tool_calls"),
+        multi_agent=copy.deepcopy(body["multi_agent"]),
+        reasoning=copy.deepcopy(body.get("reasoning")),
+        max_output_tokens=max_output_tokens,
+        preset_input=copy.deepcopy(body["input"]),
+        tool_outputs=load_tool_outputs(root / "multi_agent/mixed_tool_outputs.py"),
+        manual_item_replay=True,
+        auto_tool_continuations=10,
+    )

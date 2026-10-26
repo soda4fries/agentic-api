@@ -1,9 +1,10 @@
 //! Actual model, You search, and MCP exchanges recorded by the existing dependency proxy.
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write as _;
 use std::fs::read_to_string;
 use std::sync::Arc;
 
+use agentic_core::types::io::ResponsesInput;
 use axum::Router;
 use axum::body::Bytes;
 use axum::extract::State;
@@ -96,6 +97,42 @@ impl Dependencies {
         let state = self.state.lock().await;
         assert!(state.errors.is_empty(), "dependency mismatches: {:?}", state.errors);
     }
+
+    pub async fn shell_results(&self) -> HashMap<String, Value> {
+        let state = self.state.lock().await;
+        let mut results = HashMap::new();
+        for turn in state.turns.iter().flatten() {
+            let Some(input) = turn.request.body["input"].as_array() else {
+                continue;
+            };
+            for call in input
+                .iter()
+                .filter(|item| item["type"] == "function_call" && item["name"] == "shell")
+            {
+                let Some(result) = input
+                    .iter()
+                    .find(|item| item["type"] == "function_call_output" && item["call_id"] == call["call_id"])
+                else {
+                    continue;
+                };
+                let action: Value = serde_json::from_str(call["arguments"].as_str().unwrap()).unwrap();
+                let outputs: Vec<Value> = serde_json::from_str(result["output"].as_str().unwrap()).unwrap();
+                let commands = action["commands"].as_array().unwrap();
+                assert_eq!(commands.len(), outputs.len(), "one recorded result per command");
+                for (index, command) in commands.iter().enumerate() {
+                    if let Some(previous) = results.insert(command.as_str().unwrap().to_owned(), outputs[index].clone())
+                    {
+                        assert_eq!(previous, outputs[index], "shell fixture must be deterministic");
+                    }
+                }
+            }
+        }
+        assert!(
+            !results.is_empty(),
+            "dependency trace must capture client shell results"
+        );
+        results
+    }
 }
 
 fn agent(body: &Value) -> Option<&str> {
@@ -139,6 +176,31 @@ fn normalize(value: &mut Value) {
         }
         _ => {}
     }
+}
+
+#[test]
+fn canonical_expected_status_does_not_mask_missing_or_changed_actual_status() {
+    let recorded = json!([{"type":"function_call_output", "call_id":"call_1", "output":"result"}]);
+    let input: ResponsesInput = serde_json::from_value(recorded.clone()).unwrap();
+    let mut expected = serde_json::to_value(input.into_canonical_items()).unwrap();
+    normalize(&mut expected);
+    for status in [
+        None,
+        Some(Value::Null),
+        Some(json!("in_progress")),
+        Some(json!("incomplete")),
+    ] {
+        let mut actual = recorded.clone();
+        if let Some(status) = status {
+            actual[0]["status"] = status;
+        }
+        normalize(&mut actual);
+        assert_ne!(expected, actual);
+    }
+    let mut actual = recorded;
+    actual[0]["status"] = json!("completed");
+    normalize(&mut actual);
+    assert_eq!(expected, actual);
 }
 
 async fn replay(State(state): State<Arc<Mutex<Replay>>>, method: Method, uri: Uri, bytes: Bytes) -> Response {
@@ -190,6 +252,10 @@ async fn replay(State(state): State<Arc<Mutex<Replay>>>, method: Method, uri: Ur
         // These captures predate explicit upstream storage forwarding. Require
         // store:false on every live model round rather than ignoring the field.
         expected.as_object_mut().unwrap().entry("store").or_insert(json!(false));
+        // Upgrade legacy expected history through the existing canonical input
+        // contract. Actual requests must supply the resulting statuses themselves.
+        let input: ResponsesInput = serde_json::from_value(expected["input"].take()).unwrap();
+        expected["input"] = serde_json::to_value(input.into_canonical_items()).unwrap();
     }
     normalize(&mut expected);
     normalize(&mut actual);
