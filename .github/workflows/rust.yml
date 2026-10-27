@@ -284,5 +284,11 @@ jobs:
       - name: Verify PostgreSQL migrations and restart persistence
         run: cargo test -p agentic-server-core --test postgres_storage_integration -- --ignored --test-threads=1
 
+      - name: Verify PostgreSQL file search persistence
+        run: cargo test -p agentic-server-core --test file_search_service postgres_file_search -- --ignored --test-threads=1
+
+      - name: Verify bounded PDF ingestion
+        run: cargo test -p agentic-server-core --features file-search-pdf --test file_search_service pdf
+
       - name: Verify PostgreSQL conversation CRUD and tenant isolation
         run: cargo test -p agentic-server-core --test postgres_tenant_isolation_test -- --ignored --test-threads=1
