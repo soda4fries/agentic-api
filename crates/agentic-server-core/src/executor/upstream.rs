@@ -28,7 +28,6 @@ fn translation_context(registry: &ToolRegistry, agent: &AgentPipeline) -> Transl
         state.is_some_and(ToolSearchState::is_active),
     )
     .with_file_search_context(&agent.request.enriched_request.input)
-    .with_file_search_context(&agent.request.enriched_request.input)
     .with_collaboration(
         agent
             .request
