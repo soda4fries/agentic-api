@@ -168,23 +168,14 @@ async fn unsupported_marked_parts_are_rejected_before_inference_and_storage() {
                 .send()
                 .await
                 .unwrap();
-            assert_eq!(
-                response.status(),
-                if store { StatusCode::BAD_REQUEST } else { StatusCode::OK }
-            );
-            let _: Value = response.json().await.unwrap();
+            let status = response.status();
+            let body = response.text().await.unwrap();
+            assert_eq!(status, StatusCode::BAD_REQUEST, "store={store}, part={part}: {body}");
+            let _: Value = serde_json::from_str(&body).unwrap();
         }
     }
     let requests = captured.lock().await;
-    assert_eq!(requests.len(), 2, "only direct requests reach the upstream");
-    assert_eq!(requests[0]["input"][0]["content"][0]["type"], "input_file");
-    assert_eq!(requests[1]["input"][0]["content"][0]["type"], "future_part");
-    for request in requests.iter() {
-        assert_eq!(
-            request["input"][0]["content"][0]["prompt_cache_breakpoint"],
-            json!({"mode":"explicit"})
-        );
-    }
+    assert!(requests.is_empty(), "unsupported parts must not reach inference");
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM responses")
             .fetch_one(fixture.pool.as_ref())
