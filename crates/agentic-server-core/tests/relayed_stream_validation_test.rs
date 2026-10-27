@@ -309,12 +309,20 @@ async fn strict_relay_decoder_accepts_compatible_recorded_responses_streams() {
     // Preserve raw recordings, including their incompatibilities. Pin each
     // rejection to its capture, exact error, and number of streamed turns.
     // Live gateway output is validated separately by multi_agent_stateless.
-    let mut recorded_incompatibilities = [(
-        "store_false/multi-agent-store-false-model-dependencies-streaming.yaml",
-        "invalid request: upstream stream event does not match its active output item: inconsistent item ID, output_index, or kind",
-        17,
-        0,
-    )];
+    let mut recorded_incompatibilities = [
+        (
+            "store_false/multi-agent-store-false-model-dependencies-streaming.yaml",
+            "invalid request: upstream stream event does not match its active output item: inconsistent item ID, output_index, or kind",
+            17,
+            0,
+        ),
+        (
+            "store_false/multi-agent-store-false-openai-reference-code-interpreter-gpt-5.6-sol-streaming.yaml",
+            "invalid request: upstream stream event does not match its active output item: inconsistent item ID, output_index, or kind",
+            1,
+            0,
+        ),
+    ];
 
     for path in yaml_files(&root) {
         let relative = path.strip_prefix(&root).expect("cassette below root");

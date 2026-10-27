@@ -4,6 +4,8 @@ use std::fmt::Write as _;
 use std::fs::read_to_string;
 use std::sync::Arc;
 
+use agentic_core::types::agent_commands::AgentCommand;
+use agentic_core::types::io::MultiAgentAction;
 use agentic_core::types::io::ResponsesInput;
 use axum::Router;
 use axum::body::Bytes;
@@ -178,6 +180,38 @@ fn normalize(value: &mut Value) {
     }
 }
 
+// Compare typed collaboration arguments independently of JSON formatting.
+fn normalize_request(body: &mut Value) {
+    normalize(body);
+    let Some(input) = body["input"].as_array_mut() else {
+        return;
+    };
+    for item in input.iter_mut() {
+        if item["type"] != "function_call" {
+            continue;
+        }
+        let name = item["name"].as_str().unwrap_or_default();
+        if let Some(action) = MultiAgentAction::from_tool_name(name)
+            && let Ok(command) = AgentCommand::parse(action, item["arguments"].as_str().unwrap())
+        {
+            item["arguments"] = json!(serde_json::to_string(&command).unwrap());
+        }
+    }
+}
+
+#[test]
+fn full_history_normalization_preserves_client_call_identity() {
+    let mut expected = json!({"input":[{"type":"function_call","name":"shell","call_id":"original",
+        "arguments":"{\"commands\":[\"printf 55\"]}"},
+        {"type":"function_call_output","call_id":"original","output":"55","status":"completed"}]});
+    let mut actual = expected.clone();
+    actual["input"][0]["call_id"] = json!("changed");
+    actual["input"][1]["call_id"] = json!("changed");
+    normalize_request(&mut expected);
+    normalize_request(&mut actual);
+    assert_ne!(expected, actual);
+}
+
 #[test]
 fn canonical_expected_status_does_not_mask_missing_or_changed_actual_status() {
     let recorded = json!([{"type":"function_call_output", "call_id":"call_1", "output":"result"}]);
@@ -257,8 +291,8 @@ async fn replay(State(state): State<Arc<Mutex<Replay>>>, method: Method, uri: Ur
         let input: ResponsesInput = serde_json::from_value(expected["input"].take()).unwrap();
         expected["input"] = serde_json::to_value(input.into_canonical_items()).unwrap();
     }
-    normalize(&mut expected);
-    normalize(&mut actual);
+    normalize_request(&mut expected);
+    normalize_request(&mut actual);
     if actual != expected {
         state.errors.push(format!(
             "request differs for {:?}\nexpected: {expected}\nactual: {actual}",

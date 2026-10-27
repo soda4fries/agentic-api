@@ -12,6 +12,9 @@ pub(crate) mod retained;
 mod streaming;
 mod usage;
 
+#[cfg(test)]
+pub(crate) use multi_agent::tests::upstream_events;
+
 use crate::executor::inference::UpstreamHeaders;
 pub use execute::{ExecuteRequest, execute, prepare_non_generating_turn};
 pub use retained::PreparedRetainedResponse;

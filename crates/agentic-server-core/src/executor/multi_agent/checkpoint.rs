@@ -18,7 +18,6 @@ pub struct CheckpointLimits {
 #[derive(Debug)]
 pub struct ValidatedTreeCheckpoint {
     pub(super) snapshot: StoredTreeSnapshot,
-    pub(super) replayed_items: usize,
 }
 
 impl CheckpointLimits {
@@ -113,10 +112,7 @@ impl ValidatedTreeCheckpoint {
         if !unresolved.is_empty() {
             return Err(invalid("unresolved call has no ownership record"));
         }
-        Ok(Self {
-            snapshot,
-            replayed_items: 0,
-        })
+        Ok(Self { snapshot })
     }
 
     pub(in crate::executor) fn into_snapshot(self) -> StoredTreeSnapshot {
@@ -125,10 +121,6 @@ impl ValidatedTreeCheckpoint {
 
     pub(in crate::executor) fn snapshot(&self) -> &StoredTreeSnapshot {
         &self.snapshot
-    }
-
-    pub(in crate::executor) fn replayed_items(&self) -> usize {
-        self.replayed_items
     }
 }
 

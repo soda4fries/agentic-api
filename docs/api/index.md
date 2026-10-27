@@ -162,22 +162,19 @@ for vLLM, and rejects encrypted-only reasoning that vLLM cannot replay. Reasonin
 context and compatible opaque state support are tracked in
 [#444](https://github.com/vllm-project/agentic-api/issues/444).
 
-Multi-agent HTTP requests also support `store:false`. Append returned output items
-unchanged to your input, then append new messages or matching client tool outputs.
-The response ends with a root-attributed `compaction` item whose `encrypted_content`
-carries the agent tree, private contexts, and pending client calls. Treat that content
-as opaque; clients do not inspect or decode it. You may discard all items before the
-latest compaction item, as in OpenAI's
-[stateless compaction flow](https://developers.openai.com/api/docs/guides/compaction#server-side-compaction).
-Keeping the complete history also works: the authenticated compaction supersedes its
-prefix, and only subsequent input is applied as new work. The gateway writes no database
-rows. A collaboration transcript without its final compaction item is rejected even
-when `multi_agent` is omitted. Re-declare
-the desired tools on each stateless request. For replay across gateway restarts
-or replicas, configure the same `AGENTIC_MULTI_AGENT_REPLAY_KEY` everywhere (a
-base64-encoded 32-byte secret); the default key lasts for the current process.
-Stateless multi-agent execution uses automatic per-agent compaction; the gateway's
-explicit `compaction_trigger` extension is unsupported in this mode.
+Multi-agent HTTP requests also support `store:false`. Send the complete history:
+append returned output items unchanged to your input, followed by new messages or
+matching client tool outputs. Re-declare `multi_agent` and the desired tools on each
+request. Without `previous_response_id` or `conversation`, the gateway uses this
+submitted input without loading stored history, and `store:false` skips persistence.
+There is no separate checkpoint request or mandatory response-boundary compaction.
+The coordinator routes public history and client tool outputs to their agent owners;
+public collaboration items are not forwarded directly to the inference engine.
+Encrypted `agent_message` contents remain opaque to clients. For returning these
+messages across gateway restarts or replicas, configure the same
+`AGENTIC_MULTI_AGENT_TRANSCRIPT_KEY` everywhere (a base64-encoded 32-byte secret);
+the default key lasts for the current process. Automatic per-agent compaction remains
+enabled; the explicit `compaction_trigger` extension is unsupported in this mode.
 
 Executor-backed requests accept at most 64 MCP server declarations and 128
 discovered MCP tools. MCP discovery metadata shares the request's retained

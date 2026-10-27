@@ -698,7 +698,7 @@ access happen — those live in `tool/`, `executor/`, and `storage/` respectivel
   content. Its `input` module defines replay forms with optional IDs; output IDs remain
   required. Agent-message content includes text, images, files, refusals and encrypted
   parts, preserving response content during replay. These wire types do not impose a
-  storage policy; the executor restores either stored or client-carried checkpoints.
+  storage policy; stored IDs restore metadata, while stateless requests supply the complete history.
 - **`types/tools/params.rs`** — the tool **declaration** shapes a client sends:
   `ResponsesTool` (tagged enum: `Function`, `ToolSearch`, `Mcp`, `WebSearch`, `FileSearch`,
   `CodeInterpreter`, `Namespace`, `Custom`, `Unknown`) and each variant's param struct.
@@ -1124,28 +1124,20 @@ uses the existing response/conversation stores.
 Continuation restoration discards the latter duplicate but retains the tree.
 
 With `store:false`, HTTP execution writes no response, item, conversation, or tree rows.
-The coordinator emits the authenticated tree as a root-attributed `compaction` item
-at the response boundary. Its `encrypted_content` is opaque to clients; the serialization
-and encryption format are internal implementation details. Clients append output items
-unchanged and may discard every item before the latest compaction. The complete tree
-includes private per-agent histories, mailboxes, discovered tools, and pending client
-calls, so pruning public history does not lose the state needed for continuation.
-`multi_agent/replay.rs` authenticates and bounds the tree before restoring it. The
-compaction supersedes its public prefix whether that prefix is retained or pruned;
-there is no public-history digest or client-side ciphertext inspection requirement.
-A collaboration transcript missing its final compaction item is rejected even if the
-caller omits `multi_agent`. The existing `ValidatedTreeCheckpoint` and pending-call registry
-then restore agent histories, mailboxes, discovered tools, and call ownership.
-Only the input after the checkpoint is applied as new work, including when a replay
-switches to `store:true` with explicit root compaction. The compactor separates new
-input before removing the trigger so replay offsets cannot shift. Stored parent IDs and
-explicit conversations can still supply a tree; `store:false` leaves the new turn unstored.
+Without stored IDs, `rehydrate::from_responses` normalizes the complete client-supplied
+input without loading stored state or decoding a tree snapshot. The coordinator's
+`history.rs` processes standard collaboration items, agent attribution and client tool
+outputs using the existing registry, mailbox and pending-call types. It constructs
+request-local agent contexts and resolves each client output by call ID and kind.
+There is no private replay envelope or mandatory compaction at the response boundary.
+Actual automatic per-agent compaction remains separate. Explicit stored parent IDs and
+conversations can still restore an internal tree; `store:false` leaves the new turn unstored.
 
-`AGENTIC_MULTI_AGENT_REPLAY_KEY` accepts a base64-encoded 32-byte deployment secret.
-Use the same key across replicas and restarts to keep client-carried history replayable.
-When unset, a random process-local key supports replay until that gateway restarts.
-Only this encryption key is retained between stateless HTTP requests, not their histories.
-Replay size limits share the existing response retention and checkpoint limits.
+`collaboration::TranscriptSealer` protects inter-agent message text, using the same key
+across requests so clients can return the gateway's encrypted messages in their input.
+`AGENTIC_MULTI_AGENT_TRANSCRIPT_KEY` accepts a base64-encoded 32-byte deployment secret;
+use the same key across replicas and restarts. The default key lasts for the current process.
+Only the key survives stateless requests, not their histories, trees or pending calls.
 
 The public transcript contains attributed `multi_agent_call` (`mac_`),
 `multi_agent_call_output` (`maco_`) and `agent_message` (`amsg_`) items alongside each
@@ -1247,8 +1239,8 @@ The boundary contract is one owner and one path per concern:
 - Output-item lifecycle state is scoped to one inference round and keyed by validated
   `output_index`. Item ID and kind must match on later events; active and completed
   slots remain distinct so index reuse and duplicate completion are rejected.
-- Translation consumes validated `EventFrame`s plus the accumulator's typed function
-  call view and produces the public wire lifecycle for client-owned tools.
+- Translation consumes validated `EventFrame`s, the accumulator's resolved item kind,
+  and its typed function call view, and produces the public wire lifecycle for client-owned tools.
 - Delivery consumes translated frames and provides ordered, awaited client emission
   across inference rounds.
 
@@ -1359,6 +1351,10 @@ depend on SSE or executor types. `TranslationContext` is an owned snapshot of th
 registry facts and request metadata needed for classification and restoration. It
 provides each round's tool classification and owns final restoration of public tool
 declarations, custom/namespace shapes, tool choice, and tool-search metadata.
+Nonempty provider message IDs without the public `msg` prefix receive `msg_` during
+translation. Message events and final JSON/SSE snapshots use the same public ID;
+ingestion retains the provider's original identity for lifecycle validation. Client
+message-ID validation remains strict, so returned history can be submitted unchanged.
 Output-text `logprobs` use the existing nullable-vector deserializer: missing and
 null values become an empty vector and serialize as `[]`. Wire normalization uses
 the same default so content parts agree with item and terminal snapshots;

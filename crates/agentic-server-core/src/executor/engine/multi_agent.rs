@@ -7,6 +7,7 @@ mod context;
 mod control;
 mod delivery;
 mod guidance;
+mod history;
 mod rounds;
 use crate::executor::inference::UpstreamHeaders;
 pub(super) use context::prepare_without_inference;
@@ -120,10 +121,7 @@ impl MultiAgentRun {
         let budget = ExecutorResponseBudget::with_limit(exec.responses_config.max_retained_bytes);
         let mut restored = restore_agents(&mut pipeline.request, exec, &budget)?;
         if restored.continuing_tree {
-            restored.continue_input(
-                &pipeline.request.response_id,
-                &pipeline.request.new_input_items[restored.replayed_items..],
-            )?;
+            restored.continue_input(&pipeline.request.response_id, &pipeline.request.new_input_items)?;
         }
         let RestoredAgents {
             registry,
@@ -236,10 +234,6 @@ impl MultiAgentRun {
             },
             &CheckpointLimits::for_response(self.max_retained_bytes),
         )?;
-        if !pipeline.request.original_request.store {
-            let item = tree.replay_item(self.max_retained_bytes)?;
-            self.publish(item, pipeline).await?;
-        }
         pipeline.request.multi_agent_tree = Some(tree);
         self.payload.output = self.completed_items.into_values().collect();
         self.payload.standard_fields.completed_at = (self.payload.status == "completed").then(utcnow_str);
@@ -384,4 +378,4 @@ fn call_error(error: ClientCallError) -> ExecutorError {
 
 #[cfg(test)]
 #[path = "multi_agent_tests.rs"]
-mod tests;
+pub(super) mod tests;

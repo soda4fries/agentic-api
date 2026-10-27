@@ -169,7 +169,14 @@ async fn setup_with_compaction_gate(
             } else if let Some(output) = shell_review_output(&request) {
                 output
             } else if input.iter().any(|item| has_message_text(item, "simple compaction test")) {
-                vec![message("finished")]
+                // vLLM can use bare hexadecimal message IDs. Returned public
+                // messages must remain valid on the next full-history request.
+                let mut output = message("finished");
+                let bare_id = output["id"].as_str().unwrap().strip_prefix("msg_").unwrap().to_owned();
+                output["id"] = json!(bare_id);
+                vec![output]
+            } else if let Some(output) = stateless_replay::client_agent_message_output(&request) {
+                output
             } else if let Some(child) = child {
                 let call_id = format!("proposal_{child}");
                 let resumed = input.iter().any(|item| item["type"] == "function_call_output" && item["call_id"] == call_id);
@@ -384,7 +391,7 @@ async fn response(request: RequestPayload, exec: Arc<ExecutionContext>) -> Respo
     }
 }
 
-fn upstream_events(payload: &Value) -> String {
+pub(crate) fn upstream_events(payload: &Value) -> String {
     let mut events =
         vec![json!({"type":"response.created","response":{"id":"upstream","status":"in_progress","output":[]}})];
     for (index, item) in payload["output"].as_array().unwrap().iter().enumerate() {

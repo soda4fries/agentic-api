@@ -4,8 +4,8 @@ use crate::tool::custom::CustomToolMap;
 use crate::tool::{NamespaceMap, ToolType};
 use crate::types::event::ResponseStatus;
 use crate::types::io::MultiAgentAction;
-use crate::types::io::OutputItem;
 use crate::types::io::ToolChoice;
+use crate::types::io::{OutputItem, OutputMessage};
 use crate::types::request_response::{RequestPayload, ResponsePayload, StandardResponseFields};
 use crate::types::tools::ResponsesTool;
 use serde_json::{Map, Value, json};
@@ -169,6 +169,9 @@ impl TranslationContext {
         super::tool_search::normalize_response_output(self, output, status, unfinished_stream_item_ids)?;
         // Mark before namespace restoration, while calls still carry their model-visible names.
         for item in output.iter_mut() {
+            if let OutputItem::Message(message) = item {
+                OutputMessage::normalize_public_id(&mut message.id);
+            }
             if let OutputItem::FunctionCall(call) = item
                 && self.is_async_tool(&call.name)
             {
@@ -251,8 +254,13 @@ fn normalize_output_item(item: &mut Value) {
             item.remove("encrypted_content");
         }
     }
-    if item.get("type").and_then(Value::as_str) == Some("message") && item.get("phase").is_some_and(Value::is_null) {
-        item.remove("phase");
+    if item.get("type").and_then(Value::as_str) == Some("message") {
+        if let Some(Value::String(id)) = item.get_mut("id") {
+            OutputMessage::normalize_public_id(id);
+        }
+        if item.get("phase").is_some_and(Value::is_null) {
+            item.remove("phase");
+        }
     }
     if let Some(content) = item.get_mut("content").and_then(Value::as_array_mut) {
         for part in content {

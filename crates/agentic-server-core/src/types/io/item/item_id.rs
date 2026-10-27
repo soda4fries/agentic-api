@@ -1,6 +1,17 @@
 //! Typed public item identities and their known type-specific prefixes.
 
-use crate::types::io::{InOutItem, InputItem, OutputItem};
+use crate::types::io::{InOutItem, InputItem, OutputItem, OutputMessage};
+
+impl OutputMessage {
+    /// Make a nonempty provider message ID valid for public history reuse.
+    /// Empty-ID allocation remains owned by ingestion; upstream lookup keys
+    /// are retained separately from the public response projection.
+    pub(crate) fn normalize_public_id(id: &mut String) {
+        if !id.is_empty() && !id.starts_with("msg") {
+            id.insert_str(0, "msg_");
+        }
+    }
+}
 
 impl InputItem {
     /// Returns the public ID carried by this input item, when present.

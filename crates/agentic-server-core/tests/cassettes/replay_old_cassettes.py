@@ -78,16 +78,37 @@ def run_tool_items(client, proxy_url, model, *, send_request, extract_tool_calls
 
 def run_multi_agent_store_false(client, proxy_url, model, stream, *, run_responses,
                                 load_tool_outputs, max_output_tokens=None):
-    """Replay the mixed-tools request using live responses for client-carried history."""
+    """Replay an original multi-agent request, carrying live output history each turn."""
     root = Path(__file__).parent
-    source = root / "multi_agent/multi-agent-openai-reference-mixed-tools-gpt-5.6-sol-nonstreaming.yaml"
-    request = yaml_load(source.read_text(encoding="utf-8"))["turns"][0]["request"]
+    scenario = os.environ.get("MULTI_AGENT_SUITE", "mixed-tools")
+    if scenario == "client-agent-message":
+        token = "CLIENT_AGENT_MESSAGE_9f21"
+        request = {"headers": {"OpenAI-Beta": "responses_multi_agent=v1"}, "body": {
+            "multi_agent": {"enabled": True, "max_concurrent_subagents": 3},
+            "input": [
+                {"role": "user", "content": (
+                    "Client agent message probe: spawn one subagent named token_checker. "
+                    "Ask it to verify the secret test token from the client-supplied agent_message; "
+                    "include that message in its assignment if necessary. Wait for the subagent's "
+                    "answer, then reply with only the token. If the message is unavailable, "
+                    "reply with only NO_AGENT_MESSAGE."
+                )},
+                {"type": "agent_message", "author": "/root", "recipient": "/root",
+                 "agent": {"agent_name": "/root"},
+                 "content": [{"type": "input_text", "text": f"The secret test token is {token}."}]},
+            ],
+        }}
+    else:
+        if scenario not in {"mixed-tools", "client-owned-tools", "code-interpreter"}:
+            raise ValueError(f"Unknown multi-agent replay suite: {scenario}")
+        source = root / f"multi_agent/multi-agent-openai-reference-{scenario}-gpt-5.6-sol-nonstreaming.yaml"
+        request = yaml_load(source.read_text(encoding="utf-8"))["turns"][0]["request"]
     body = request["body"]
     client.headers.update({key: value for key, value in request["headers"].items()
                            if key.lower() == "openai-beta"})
     run_responses(
         client, 1, model, stream, False, [], proxy_url,
-        tools=copy.deepcopy(body["tools"]),
+        tools=copy.deepcopy(body.get("tools")),
         tool_choice=body.get("tool_choice"),
         parallel_tool_calls=body.get("parallel_tool_calls"),
         multi_agent=copy.deepcopy(body["multi_agent"]),
@@ -95,6 +116,8 @@ def run_multi_agent_store_false(client, proxy_url, model, stream, *, run_respons
         max_output_tokens=max_output_tokens,
         preset_input=copy.deepcopy(body["input"]),
         tool_outputs=load_tool_outputs(root / "multi_agent/mixed_tool_outputs.py"),
+        tool_search_output_tools=(json.loads((root / "tool_search/returned_tools.json").read_text())
+                                  if scenario == "client-owned-tools" else None),
         manual_item_replay=True,
         auto_tool_continuations=10,
     )

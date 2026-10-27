@@ -17,7 +17,7 @@ use agentic_core::types::request_response::ResponsePayload;
 use agentic_core::types::tools::{CodexNamespaceMember, ResponsesTool, ToolSearchStatus};
 use serde_json::Value;
 
-use crate::support::{Cassette, Turn, responses_turns};
+use crate::support::{Cassette, Turn, recorded_named_sse_events, responses_turns};
 
 pub struct RecordedSession {
     exchanges: Vec<RecordedExchange>,
@@ -83,6 +83,21 @@ impl RecordedSession {
     /// # Errors
     /// An exchange violates the multi-agent contract.
     pub fn from_cassette(cassette: &Cassette) -> Result<Self, ContractMismatch> {
+        Self::from_cassette_with(cassette, read_recorded_response)
+    }
+
+    /// Compare terminal response semantics independently of SSE wire validity.
+    /// Use only alongside an explicit test of the recording's wire incompatibility.
+    /// # Errors
+    /// A terminal response or its session history violates the multi-agent contract.
+    pub fn from_terminal_responses(cassette: &Cassette) -> Result<Self, ContractMismatch> {
+        Self::from_cassette_with(cassette, read_terminal_response)
+    }
+
+    fn from_cassette_with(
+        cassette: &Cassette,
+        read_response: fn(&Turn) -> Result<(Value, ResponsePayload), ContractMismatch>,
+    ) -> Result<Self, ContractMismatch> {
         let mut exchanges = Vec::new();
         let mut replay_history = Vec::new();
         for turn in responses_turns(cassette) {
@@ -92,7 +107,7 @@ impl RecordedSession {
                     return Err(mismatch("recording must enable multi-agent or inherit a stored tree"));
                 }
             }
-            let (terminal, response) = read_recorded_response(turn)?;
+            let (terminal, response) = read_response(turn)?;
             let input = match &turn.request.body.input {
                 Value::Array(items) => {
                     let new_items = if turn.request.body.store {
@@ -153,6 +168,61 @@ impl RecordedSession {
         let session = Self { exchanges };
         session.validate()?;
         Ok(session)
+    }
+
+    /// The successful stateless scenarios keep public identities, final tool statuses,
+    /// and one equivalent successful MCP discovery throughout their complete history.
+    /// Failed discovery remains observable and does not erase a previous successful listing.
+    /// # Errors
+    /// A stateless response is stored or has invalid public item/discovery semantics.
+    pub fn assert_stateless(&self) -> Result<(), ContractMismatch> {
+        let mut listings = HashMap::<&str, Vec<_>>::new();
+        for exchange in &self.exchanges {
+            if exchange.store || exchange.previous_response_id.is_some() {
+                return Err(mismatch("stateless session must not store or reference a response"));
+            }
+            for item in &exchange.response.output {
+                let prefix = match item {
+                    OutputItem::Message(_) => Some("msg_"),
+                    OutputItem::FunctionCall(_) => Some("fc_"),
+                    OutputItem::ShellCall(_) => Some("sh_"),
+                    OutputItem::CustomToolCall(_) => Some("ctc_"),
+                    OutputItem::ToolSearchCall(_) => Some("tsc_"),
+                    OutputItem::WebSearchCall(_) => Some("ws_"),
+                    OutputItem::McpCall(_) => Some("mcp_"),
+                    OutputItem::CodeInterpreterCall(_) => Some("ci_"),
+                    OutputItem::Compaction(_) => return Err(mismatch("scenario unexpectedly compacted history")),
+                    _ => None,
+                };
+                if prefix.is_some_and(|prefix| item.id().is_none_or(|id| !id.starts_with(prefix))) {
+                    return Err(mismatch("public item ID cannot be reused in client history"));
+                }
+                if matches!(
+                    item,
+                    OutputItem::FunctionCall(_)
+                        | OutputItem::ShellCall(_)
+                        | OutputItem::CustomToolCall(_)
+                        | OutputItem::ToolSearchCall(_)
+                        | OutputItem::WebSearchCall(_)
+                        | OutputItem::McpCall(_)
+                        | OutputItem::CodeInterpreterCall(_)
+                ) && serde_json::to_value(item).map_err(|error| mismatch(error.to_string()))?["status"]
+                    != "completed"
+                {
+                    return Err(mismatch("successful scenario returned a non-completed tool call"));
+                }
+                if let OutputItem::McpListTools(listing) = item
+                    && listing.error.is_none()
+                {
+                    let previous = listings.entry(&listing.server_label).or_default();
+                    if previous.contains(&&listing.tools) {
+                        return Err(mismatch("equivalent successful MCP discovery was emitted again"));
+                    }
+                    previous.push(&listing.tools);
+                }
+            }
+        }
+        Ok(())
     }
 
     fn validate(&self) -> Result<(), ContractMismatch> {
@@ -356,6 +426,24 @@ fn read_recorded_response(turn: &Turn) -> Result<(Value, ResponsePayload), Contr
     Ok((terminal, response))
 }
 
+fn read_terminal_response(turn: &Turn) -> Result<(Value, ResponsePayload), ContractMismatch> {
+    let terminal = match &turn.response.body {
+        Some(body) => body.clone(),
+        None => recorded_named_sse_events(turn)
+            .into_iter()
+            .find(|event| {
+                matches!(
+                    event["type"].as_str(),
+                    Some("response.completed" | "response.incomplete" | "response.failed")
+                )
+            })
+            .and_then(|event| event.get("response").cloned())
+            .ok_or_else(|| mismatch("missing terminal response"))?,
+    };
+    let response = serde_json::from_value(terminal.clone()).map_err(|error| mismatch(error.to_string()))?;
+    Ok((terminal, response))
+}
+
 fn opaque_content(value: &mut Value) {
     match value {
         Value::Object(fields) => {
@@ -443,11 +531,18 @@ pub fn assert_multi_agent_contract(
     if last.output.iter().any(|item| client_call(item).is_some()) {
         return Err(mismatch("gateway session ends with pending client calls"));
     }
-    if !last.output.iter().any(|item| {
-        matches!(item, OutputItem::Message(message)
+    // A completed root answer can precede a later child-only cleanup turn.
+    // The stateless client-owned OpenAI recording demonstrates this ordering.
+    if !gateway
+        .exchanges
+        .iter()
+        .flat_map(|exchange| &exchange.response.output)
+        .any(|item| {
+            matches!(item, OutputItem::Message(message)
         if message.agent.as_ref().is_some_and(|agent| agent.agent_name == "/root")
             && message.phase == Some(MessagePhase::FinalAnswer))
-    }) {
+        })
+    {
         return Err(mismatch("gateway session has no root final answer"));
     }
     Ok(())

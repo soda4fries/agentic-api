@@ -166,7 +166,10 @@ impl AgentExecutionState {
         Ok(())
     }
 
-    pub(super) fn take_discovery_output(&mut self) -> Vec<OutputItem> {
+    pub(super) fn take_discovery_output(&mut self, history: &ResponsesInput) -> Vec<OutputItem> {
+        // Discovery belongs to the response, including agents whose forked
+        // context omits the root's already-published discovery item.
+        self.registry.cache_listed_mcp_tools(history);
         let output = self
             .registry
             .mcp_list_tool_items()

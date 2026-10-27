@@ -210,34 +210,20 @@ async fn child_shell_call_replays_full_history_without_storage() {
         // Exercise the actual public JSON input decoder, including output -> input conversion.
         let mut next = request.clone();
         next.input = deserialize_from_value(serde_json::to_value(&history).unwrap()).unwrap();
+        assert!(
+            !first
+                .output
+                .iter()
+                .any(|item| matches!(item, OutputItem::Compaction(_)))
+        );
         let mut triggered = next.clone();
-        triggered.multi_agent = None; // The replayed tree restores the effective mode.
         triggered.input.push(InputItem::CompactionTrigger);
         assert!(matches!(rehydrate_conversation(triggered, &exec).await,
             Err(ExecutorError::InvalidRequest(message)) if message.contains("compaction_trigger")));
-        let mut damaged = next.clone();
-        let mut items = history.clone();
-        items.remove(items.len() - 2); // Omit the client-carried checkpoint.
-        damaged.input = ResponsesInput::Items(items);
-        assert!(rehydrate_conversation(damaged, &exec).await.is_err());
-        let mut damaged = next.clone();
-        let mut wire = serde_json::to_value(&history).unwrap();
-        let index = wire.as_array().unwrap().len() - 2;
-        let mut encrypted = wire[index]["encrypted_content"].as_str().unwrap().to_owned();
-        let replacement = if &encrypted[30..31] == "A" { "B" } else { "A" };
-        encrypted.replace_range(30..31, replacement);
-        wire[index]["encrypted_content"] = json!(encrypted);
-        damaged.input = deserialize_from_value(wire).unwrap();
-        assert!(rehydrate_conversation(damaged, &exec).await.is_err());
 
-        // Replay is independent of a response session and can branch without consuming state.
-        for prune in [false, true] {
-            let mut replay = next.clone();
-            if prune {
-                replay.input =
-                    deserialize_from_value(serde_json::to_value(&history[history.len() - 2..]).unwrap()).unwrap();
-            }
-            let completed = response(replay, exec.clone()).await;
+        // Each request is independent and carries all public history, with no private checkpoint.
+        for _ in 0..2 {
+            let completed = response(next.clone(), exec.clone()).await;
             assert_eq!(completed.status, "completed");
             assert!(
                 completed

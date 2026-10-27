@@ -327,8 +327,8 @@ pub async fn compact_response(
     payload.prompt_cache_key = request.prompt_cache_key;
     let ctx = rehydrate_conversation(payload, exec_ctx).await?;
     // OpenAI excludes multi-agent execution from the standalone compact endpoint,
-    // including trees restored from client-carried checkpoints or stored responses.
-    if ctx.multi_agent_tree.is_some() {
+    // including stored trees and public history attributed to a multi-agent run.
+    if ctx.multi_agent_tree.is_some() || ctx.enriched_request.input.has_multi_agent_history() {
         return Err(ExecutorError::InvalidRequest(
             "/responses/compact is not supported with multi_agent".into(),
         ));

@@ -1,0 +1,238 @@
+turns:
+- filename: t1
+  request:
+    body:
+      input:
+      - content: 'Client agent message probe: spawn one subagent named token_checker.
+          Ask it to verify the secret test token from the client-supplied agent_message;
+          include that message in its assignment if necessary. Wait for the subagent''s
+          answer, then reply with only the token. If the message is unavailable, reply
+          with only NO_AGENT_MESSAGE.'
+        role: user
+      - agent:
+          agent_name: /root
+        author: /root
+        content:
+        - text: The secret test token is CLIENT_AGENT_MESSAGE_9f21.
+          type: input_text
+        recipient: /root
+        type: agent_message
+      max_output_tokens: 8192
+      model: Qwen/Qwen3.8-27B-FP8
+      multi_agent:
+        enabled: true
+        max_concurrent_subagents: 3
+      store: false
+      stream: false
+    headers:
+      accept: '*/*'
+      content-type: application/json
+      openai-beta: responses_multi_agent=v1
+      user-agent: python-httpx/0.28.1
+    method: POST
+    path: /v1/responses
+    query_params: {}
+  response:
+    body:
+      background: false
+      completed_at: 1793100979
+      created_at: 1793100967
+      error: null
+      frequency_penalty: 0.0
+      id: resp_01a17d25-6e0e-70a1-b42d-5f6e74d3a0fd
+      incomplete_details: null
+      instructions: null
+      max_output_tokens: 8192
+      max_tool_calls: null
+      metadata: {}
+      model: Qwen/Qwen3.8-27B-FP8
+      object: response
+      output:
+      - agent:
+          agent_name: /root
+        content:
+        - text: 'The user''s task is asking me to:
+
+            1. Spawn a subagent named `token_checker`
+
+            2. Ask it to verify the secret test token from the client-supplied agent_message
+
+            3. The message payload contains: "The secret test token is CLIENT_AGENT_MESSAGE_9f21."
+
+            4. Wait for the subagent''s answer
+
+            5. Reply with only the token (or NO_AGENT_MESSAGE if unavailable)
+
+
+            The token is clearly provided in the message: `CLIENT_AGENT_MESSAGE_9f21`
+
+
+            Let me spawn the subagent with the assignment to verify this token, include
+            the message in its assignment, wait for it, and then reply with just the
+            token.
+
+            '
+          type: reasoning_text
+        id: rs_8e84e11c67fb4bac
+        summary: []
+        type: reasoning
+      - action: spawn_agent
+        agent:
+          agent_name: /root
+        arguments: '{"task_name":"token_checker","message":"enc_2_Z0iEVFJxDaHSibLNu5jN2YipTGbJRiEeFXEMBqOlWg0x5sqLleqlamcfRhXg_Np67WFlC0W9stq7CVYvIa4L0WJNOSc6grXEw384cZq8yQWIoubLXRQSer0v4HlpR2ZiiDmZHC2oZM-onlACgf5LOMKyKOGqP3znnGsKLWwEUJ2kBZOn0rJP74nfwH3EHOEQduSB6vX6aBV99DfdRX5Ar3RjQ3Zz5NedcmRZerWg2fDUUGpKGCidNE6updsXt8BGEEcorOkwKqqBltroa6gRwxKjmRoLee-yFjZie1yrNKqYwskeq4F9aSMB9bsfjxobT9pW2r84gWbyQSTdA7gxryNMWGxuaO6YeCourOrSJ_8ah1_fpiZUEv33p-YfY5","fork_turns":"all"}'
+        call_id: chatcmpl-tool-9b7151e4b38f7af0
+        id: mac_01a17d25-848f-7272-a585-4423fd189af0
+        type: multi_agent_call
+      - agent:
+          agent_name: /root/token_checker
+        author: /root
+        content:
+        - encrypted_content: enc_KhKtpHn-xxkZessvAy1n3Ktsr8ZuKWZ03pTf2suo6fBESqs3n1LwpyJzo3bN1rzWTzXCiRHmF0h-3AchMLj2tyR1SNDuZO6gJT3PLf7l_S9wCocRcdH_v0HVlH1MAqEfp_JONQIZ5KMSnGqH6ApMN7_87gcx_Ow4oNl6TfZgK-U5NSC63CI9DTqJErCCnpuI42mvlHM2HheHWt_v4BrknDBTYPzkdZDt9EDp3dg1MXUy95eNf1WKmq9VRFUijNkPmxay5-f98OtTsofmZI-QaBJKXfBI9bxHFG838H53JJ0fmYxBBj1oudxwC4cx-0uRawqyxlpyf4rLgXciz_kuszv1aoAE-aElqnYsygxmVqCpafW7AQKLvaup10snFfwe
+          type: encrypted_content
+        id: amsg_01a17d25-8490-7c62-8d68-56e454f35af0
+        recipient: /root/token_checker
+        type: agent_message
+      - action: spawn_agent
+        agent:
+          agent_name: /root
+        call_id: chatcmpl-tool-9b7151e4b38f7af0
+        id: maco_01a17d25-8490-7c62-8d68-570495e19c8c
+        output:
+        - annotations: []
+          logprobs: []
+          text: '{"task_name":"/root/token_checker"}'
+          type: output_text
+        type: multi_agent_call_output
+      - agent:
+          agent_name: /root
+        content:
+        - text: 'The subagent was spawned successfully. Now I need to wait for its
+            answer.
+
+            '
+          type: reasoning_text
+        id: rs_b3ac1da79d0766a6
+        summary: []
+        type: reasoning
+      - action: wait_agent
+        agent:
+          agent_name: /root
+        arguments: '{"timeout_ms":30000}'
+        call_id: chatcmpl-tool-925a053af974542a
+        id: mac_01a17d25-8fa6-7711-b703-391e37935a68
+        type: multi_agent_call
+      - agent:
+          agent_name: /root/token_checker
+        content:
+        - text: 'I am `/root/token_checker`, a subagent spawned by `/root`. My task
+            is to verify the secret test token from the client-supplied agent_message
+            and reply with ONLY the token itself.
+
+
+            The message payload is: "The secret test token is CLIENT_AGENT_MESSAGE_9f21."
+
+
+            The token is: `CLIENT_AGENT_MESSAGE_9f21`
+
+
+            I don''t need to spawn any further subagents or do any tool calls. I just
+            need to return the token as my final answer.
+
+            '
+          type: reasoning_text
+        id: rs_aca3a244aa053465
+        summary: []
+        type: reasoning
+      - agent:
+          agent_name: /root/token_checker
+        content:
+        - annotations: []
+          logprobs: []
+          text: '
+
+
+            CLIENT_AGENT_MESSAGE_9f21'
+          type: output_text
+        id: msg_a26cf8f10db542f2
+        phase: final_answer
+        role: assistant
+        status: completed
+        type: message
+      - agent:
+          agent_name: /root
+        author: /root/token_checker
+        content:
+        - encrypted_content: enc_8NHZ0E3mbt8sjPsWzHbTr45RkIB0toFqVEKjWNSertAhtWxJ8r2rXQW6Z95c8RicEezSBXIlqQ
+          type: encrypted_content
+        id: amsg_01a17d25-94df-7ea3-be26-9a567ec3a33c
+        recipient: /root
+        type: agent_message
+      - action: wait_agent
+        agent:
+          agent_name: /root
+        call_id: chatcmpl-tool-925a053af974542a
+        id: maco_01a17d25-94df-7ea3-be26-9a737ee82dfb
+        output:
+        - annotations: []
+          logprobs: []
+          text: '{"message":"Agent mailbox updated.","timed_out":false}'
+          type: output_text
+        type: multi_agent_call_output
+      - agent:
+          agent_name: /root
+        content:
+        - text: 'The subagent token_checker has returned the token: CLIENT_AGENT_MESSAGE_9f21
+
+
+            The user asked me to reply with only the token.
+
+            '
+          type: reasoning_text
+        id: rs_8fd88a2de783eb85
+        summary: []
+        type: reasoning
+      - agent:
+          agent_name: /root
+        content:
+        - annotations: []
+          logprobs: []
+          text: '
+
+
+            CLIENT_AGENT_MESSAGE_9f21'
+          type: output_text
+        id: msg_b433fa985a02d252
+        phase: final_answer
+        role: assistant
+        status: completed
+        type: message
+      parallel_tool_calls: false
+      presence_penalty: 0.0
+      previous_response_id: null
+      prompt_cache_key: null
+      prompt_cache_options: null
+      reasoning: null
+      safety_identifier: null
+      service_tier: auto
+      status: completed
+      store: false
+      temperature: 1.0
+      text:
+        format:
+          type: text
+      tool_choice: auto
+      tools: []
+      top_logprobs: 0
+      top_p: 1.0
+      truncation: disabled
+      usage:
+        input_tokens: 8870
+        input_tokens_details:
+          cached_tokens: 0
+        output_tokens: 449
+        output_tokens_details:
+          reasoning_tokens: 0
+        total_tokens: 9319
+    headers:
+      content-type: application/json
+    status_code: 200

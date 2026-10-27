@@ -81,7 +81,7 @@ fn shell_outputs(output: &Value, results: &HashMap<String, Value>) -> Vec<Value>
     client_outputs
 }
 
-async fn replay_mode(mode: &str, prune: bool) {
+async fn replay_mode(mode: &str) {
     let model = Dependencies::start(&format!("{DIR}/multi-agent-store-false-model-dependencies-{mode}.yaml")).await;
     let search = Dependencies::start(&format!(
         "{DIR}/multi-agent-store-false-search-dependencies-{mode}.yaml"
@@ -122,14 +122,6 @@ async fn replay_mode(mode: &str, prune: bool) {
         }
         assert_eq!(request["store"], false);
         assert!(request.get("previous_response_id").is_none());
-        if !actual_turns.is_empty() {
-            assert_replay_validation(&client, &url, &request).await;
-            if prune {
-                let input = request["input"].as_array_mut().unwrap();
-                let checkpoint = input.iter().rposition(|item| item["type"] == "compaction").unwrap();
-                input.drain(..checkpoint);
-            }
-        }
         history = request["input"].as_array().unwrap().clone();
         let response = client
             .post(format!("{url}/v1/responses"))
@@ -182,54 +174,16 @@ async fn replay_mode(mode: &str, prune: bool) {
     gateway.abort();
 }
 
-async fn assert_replay_validation(client: &Client, url: &str, request: &Value) {
-    let checkpoint = request["input"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .rposition(|item| item["type"] == "compaction")
-        .unwrap();
-    let mut tampered = request.clone();
-    let encrypted = tampered["input"][checkpoint]["encrypted_content"].as_str().unwrap();
-    let mut damaged = encrypted.to_owned();
-    damaged.replace_range(30..31, if &encrypted[30..31] == "A" { "B" } else { "A" });
-    tampered["input"][checkpoint]["encrypted_content"] = json!(damaged);
-    let mut missing = request.clone();
-    missing.as_object_mut().unwrap().remove("multi_agent");
-    missing["input"]
-        .as_array_mut()
-        .unwrap()
-        .retain(|item| item["type"] != "compaction");
-    for (invalid, expected) in [
-        (tampered, "invalid multi-agent replay state"),
-        (missing, "final compaction item"),
-    ] {
-        let response = client
-            .post(format!("{url}/v1/responses"))
-            .bearer_auth("test-key")
-            .header("OpenAI-Beta", "responses_multi_agent=v1")
-            .json(&invalid)
-            .send()
-            .await
-            .unwrap();
-        let status = response.status();
-        let body = response.text().await.unwrap();
-        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
-        assert!(body.contains(expected), "{body}");
-    }
-}
-
 async fn assert_reference_contract(mode: &str, actual_turns: &[Value]) {
     for turn in actual_turns {
         let payload = terminal(&turn["response"]);
         assert_eq!(payload["status"], "completed");
         assert_eq!(payload["store"], false);
         let output = payload["output"].as_array().unwrap();
-        let checkpoint = output.last().unwrap();
-        assert_eq!(checkpoint["type"], "compaction");
-        assert_eq!(checkpoint["agent"]["agent_name"], "/root");
-        assert!(checkpoint["encrypted_content"].is_string());
-        assert_eq!(checkpoint.as_object().unwrap().len(), 4);
+        assert!(
+            !output.iter().any(|item| item["type"] == "compaction"),
+            "this scenario does not trigger automatic compaction"
+        );
         assert!(
             !output.iter().any(|item| item["type"] == "agent_message"
                 && item["author"] == "/root"
@@ -272,18 +226,14 @@ async fn assert_reference_contract(mode: &str, actual_turns: &[Value]) {
 
 #[tokio::test]
 async fn mixed_tools_store_false_json_runs_through_gateway() {
-    for prune in [false, true] {
-        timeout(Duration::from_secs(60), replay_mode("nonstreaming", prune))
-            .await
-            .expect("gateway replay timed out");
-    }
+    timeout(Duration::from_secs(60), replay_mode("nonstreaming"))
+        .await
+        .expect("gateway replay timed out");
 }
 
 #[tokio::test]
 async fn mixed_tools_store_false_sse_runs_through_gateway() {
-    for prune in [false, true] {
-        timeout(Duration::from_secs(60), replay_mode("streaming", prune))
-            .await
-            .expect("gateway replay timed out");
-    }
+    timeout(Duration::from_secs(60), replay_mode("streaming"))
+        .await
+        .expect("gateway replay timed out");
 }

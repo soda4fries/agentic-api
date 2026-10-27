@@ -93,7 +93,7 @@ pub(super) fn prepare_reasoning_for_vllm(input: &mut ResponsesInput) -> Executor
 /// Dispatches based on the supplied history source, independently of `store`:
 /// - `previous_response_id`: rehydrate from the prior response checkpoint
 /// - `conversation`:         rehydrate from the conversation
-/// - no ids:                 restore client-carried state or normalize submitted input
+/// - no ids:                 normalize the complete history supplied by the client
 ///
 /// # Errors
 /// Returns [`ExecutorError`] if storage is unavailable, a referenced ID does not exist,
@@ -180,7 +180,7 @@ async fn rehydrate_request(
         }
         (true, false) => from_conversation(&mut ctx, exec_ctx).await?,
         (false, true) => from_response(&mut ctx, exec_ctx).await?,
-        (false, false) => from_input(&mut ctx, exec_ctx.responses_config.max_retained_bytes)?,
+        (false, false) => from_responses(&mut ctx),
     }
 
     // Stateless multi-agent runs use the existing automatic per-agent compactor.
@@ -205,25 +205,9 @@ async fn rehydrate_request(
     Ok(ctx)
 }
 
-/// Resolve client-carried history without accessing response or conversation storage.
-fn from_input(ctx: &mut RequestContext, max_bytes: usize) -> ExecutorResult<()> {
-    if let Some(tree) = ValidatedTreeCheckpoint::from_replay(&ctx.new_input_items, max_bytes)? {
-        return apply_agent_tree(ctx, tree);
-    }
-
-    if ctx.new_input_items.iter().filter_map(InOutItem::as_input).any(|item| {
-        matches!(
-            item.as_ref(),
-            InputItem::MultiAgentCall(_) | InputItem::MultiAgentCallOutput(_) | InputItem::AgentMessage(_)
-        )
-    }) {
-        return Err(ExecutorError::InvalidRequest(
-            "multi-agent replay requires its final compaction item followed by new input".into(),
-        ));
-    }
-
+/// Use the submitted Responses history without accessing response or conversation storage.
+fn from_responses(ctx: &mut RequestContext) {
     ctx.enriched_request.input = ResponsesInput::from(InOutItem::into_input_items(ctx.new_input_items.clone()));
-    Ok(())
 }
 
 fn validate_multi_agent_request(request: &RequestPayload) -> ExecutorResult<()> {

@@ -162,9 +162,9 @@ async fn compact_endpoint_rejects_restored_multi_agent_trees_before_inference() 
         if store {
             request["previous_response_id"] = parent["id"].clone();
         } else {
-            let checkpoint = parent["output"].as_array().unwrap().last().unwrap();
-            assert_eq!(checkpoint["type"], "compaction");
-            request["input"].as_array_mut().unwrap().insert(0, checkpoint.clone());
+            let mut history = parent["output"].as_array().unwrap().clone();
+            history.extend(request["input"].as_array().unwrap().iter().cloned());
+            request["input"] = serde_json::json!(history);
         }
         let calls_before = captured.lock().await.len();
         let response = client
