@@ -3,6 +3,8 @@ mod common;
 pub mod multi_agent_contract;
 #[path = "responses/multi_agent_stateless.rs"]
 mod multi_agent_stateless;
+#[path = "responses/prompt_cache_breakpoints.rs"]
+mod prompt_cache_breakpoints;
 #[path = "responses/prompt_cache_options.rs"]
 mod prompt_cache_options;
 #[path = "responses/stateless.rs"]
