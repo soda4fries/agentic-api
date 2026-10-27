@@ -390,6 +390,17 @@ impl FileConfig {
 
     fn validate(&self, path: &Path) -> Result<(), Error> {
         if self
+            .file_search
+            .sqlite_vec_extension_path
+            .as_ref()
+            .is_some_and(|extension| extension.as_os_str().is_empty())
+        {
+            return Err(Error::Config(format!(
+                "configuration file {} contains an empty file_search.sqlite_vec_extension_path",
+                path.display()
+            )));
+        }
+        if self
             .files
             .storage_dir
             .as_ref()
@@ -537,6 +548,21 @@ mod tests {
         assert!(
             FileConfig::load(home.path()).is_err(),
             "raw credentials are not a supported config-file field"
+        );
+    }
+
+    #[test]
+    fn loads_sqlite_vec_extension_path() {
+        let home = tempdir().unwrap();
+        fs::write(
+            home.path().join("config.toml"),
+            "[file_search]\nsqlite_vec_extension_path = \"/opt/sqlite-vec/vec0.so\"\n",
+        )
+        .unwrap();
+        let config = FileConfig::load(home.path()).unwrap().unwrap();
+        assert_eq!(
+            config.file_search.sqlite_vec_extension_path.as_deref(),
+            Some(std::path::Path::new("/opt/sqlite-vec/vec0.so"))
         );
     }
 

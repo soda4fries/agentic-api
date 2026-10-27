@@ -1,9 +1,10 @@
 # Files, vector stores, and file search
 
 Agentic API stores uploaded file bytes on the local filesystem. File metadata,
-vector stores, chunks, and vectors use its SQLite or PostgreSQL database.
-Its built-in `file_search` tool retrieves document passages and supplies them to
-the model within the Responses tool loop. An OGX service is not required.
+vector stores, chunks, and vectors use its SQLite or PostgreSQL database. The
+Files and vector-store HTTP APIs can ingest and search documents directly.
+The Responses `file_search` built-in tool uses the same service to supply
+retrieved passages to the model.
 
 ## Configure local file storage
 
@@ -50,6 +51,24 @@ and vector dimensions. Changing the provider or embedding configuration requires
 a new store and reingestion. The default SQL repository preserves the identities
 of stores created before provider injection was added.
 
+### Use sqlite-vec for semantic search
+
+For a file-backed SQLite deployment, install a trusted [sqlite-vec loadable
+extension](https://github.com/asg017/sqlite-vec) and set its absolute path:
+
+```toml
+[file_search]
+sqlite_vec_extension_path = "/opt/sqlite-vec/vec0.so"
+```
+
+`AGENTIC_FILE_SEARCH_SQLITE_VEC_EXTENSION_PATH` overrides the configuration
+file. The gateway loads this binary at startup, so keep it under deployment
+control. The SQLite vector index stores unit-normalized float32 embeddings and
+uses cosine distance for semantic search. Keyword and hybrid modes use the
+bounded exact SQL ranker. SQLite-vec is optional; without an extension path,
+all search modes use the SQL repository. Existing vector stores retain their
+provider identity and must be reingested to change providers.
+
 ## Integrate storage providers
 
 `FileSearchService::new` uses the existing SQLite or PostgreSQL pool for file
@@ -59,12 +78,12 @@ configured files directory uses this same local-files implementation.
 
 Rust integrations can instead supply implementations of `FileSearchRepository`
 and `FileBlobStore` through `FileSearchService::with_providers`, then install the
-service with `ExecutionContext::with_file_search_service`. Both the HTTP routes
-and the Responses `file_search` built-in tool use that service. A repository
-adapter can compose SQL metadata with Milvus, sqlite-vec, or another vector
-index; a blob-store adapter can use S3, GCS, or Azure Blob Storage. This release
-provides the contracts and SQL/local implementations, not those remote adapters
-or a configuration-file provider catalog.
+service with `ExecutionContext::with_file_search_service`. The HTTP routes and
+Responses built-in tool use that service. A repository adapter
+can compose SQL metadata with Milvus or another vector index; a blob-store
+adapter can use S3, GCS, or Azure Blob Storage. This layer provides SQL and
+sqlite-vec repositories and the local blob store. Other adapters and a
+configuration-file provider catalog are follow-up work.
 
 Repository implementations must publish an attachment only after its chunks
 are searchable, keep store embedding identities and dimensions compatible, and
@@ -92,7 +111,7 @@ curl http://localhost:8080/v1/vector_stores \
 
 curl http://localhost:8080/v1/vector_stores/vs_REPLACE/files \
   -H 'Content-Type: application/json' \
-  -d '{"file_id":"file-REPLACE","attributes":{"department":"engineering"}}'
+  -d '{"file_id":"file_REPLACE","attributes":{"department":"engineering"}}'
 ```
 
 Use the returned IDs in later requests. A successful attachment is fully ingested;
@@ -155,7 +174,7 @@ Results include file ID, filename, attributes, score, and text content.
 Filters support `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `in`, and `nin`, combined with
 nested `and` and `or` filters. Comparisons use the attribute's actual string,
 number, or boolean type. Result limits range from 1 to 50 and apply globally
-across queries and, for the built-in tool, selected stores.
+across queries and selected stores.
 
 ## Use the Responses built-in tool
 
@@ -210,9 +229,9 @@ unreferenced files. Automatic orphan-file cleanup is not included. A missing or
 damaged file referenced by metadata returns a storage error instead of a partial
 download. Uploads stored inline by an earlier draft remain readable.
 
-The routes use the gateway's configured authentication policy. This first
-implementation uses bounded exact retrieval over SQL storage. It is intended for
-small corpora and returns explicit capacity errors when limits are exceeded.
+The routes use the gateway's configured authentication policy. Retrieval is
+bounded and intended for small corpora; it returns capacity errors when limits
+are exceeded.
 Each store is limited to 10,000 chunks and 64 MiB of serialized chunk data,
 including embeddings; ingestion enforces these limits before publication.
 Searching multiple stores shares the same aggregate retrieval budget.

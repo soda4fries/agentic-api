@@ -6,6 +6,7 @@ mod ingest;
 mod provider;
 mod ranking;
 mod service;
+mod sqlite_vec;
 
 pub use crate::storage::file_search::{
     Collection, FilePublicationFailure, FileSearchStorage as SqlFileSearchRepository, PreparedAttachment, StoredChunk,
@@ -16,3 +17,4 @@ pub use crate::types::file_search::FileSearchError;
 pub use handler::{FileSearchExecutionParams, FileSearchExecutor, FileSearchHandler};
 pub use provider::{FileBlobStore, FileSearchRepository};
 pub use service::{FileSearchService, MAX_FILE_BYTES};
+pub use sqlite_vec::SqliteVecRepository;

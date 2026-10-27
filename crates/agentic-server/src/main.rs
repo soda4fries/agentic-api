@@ -464,6 +464,9 @@ fn build_config(llm_api_base: String, common: &CommonArgs, file: &FileConfig) ->
         sqlite,
         tools: ToolRuntimeConfig {
             file_search: agentic_core::types::file_search::FileSearchConfig {
+                sqlite_vec_extension_path: std::env::var_os("AGENTIC_FILE_SEARCH_SQLITE_VEC_EXTENSION_PATH")
+                    .map(std::path::PathBuf::from)
+                    .or_else(|| file.file_search.sqlite_vec_extension_path.clone()),
                 files_storage_dir: std::env::var_os("AGENTIC_FILES_STORAGE_DIR")
                     .map(std::path::PathBuf::from)
                     .or_else(|| file.files.storage_dir.clone()),

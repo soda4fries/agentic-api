@@ -1,7 +1,6 @@
 //! Files and vector store routes backed by the core retrieval service.
 
 use agentic_core::executor::ExecutorError;
-use agentic_core::tool::ToolError;
 use agentic_core::tool::file_search::{FileSearchService, MAX_FILE_BYTES};
 use agentic_core::types::file_search::{
     AttachFileRequest, CreateVectorStoreRequest, FileSearchError, ListParams, SearchRequest,
@@ -46,24 +45,56 @@ pub(crate) fn router() -> Router<AppState> {
 
 fn service(state: &AppState) -> Result<&FileSearchService, Box<Response>> {
     state.exec_ctx.file_search.as_ref().ok_or_else(|| {
-        Box::new(error(FileSearchError::Unavailable(
+        Box::new(error(&FileSearchError::Unavailable(
             "File search requires configured persistence".into(),
         )))
     })
 }
 
-fn error(error: FileSearchError) -> Response {
-    executor_error_response(ExecutorError::Tool(ToolError::FileSearch(error)))
+fn error(error: &FileSearchError) -> Response {
+    let status = StatusCode::from_u16(error.status_code()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    let category = match error.status_code() {
+        400 => "invalid_request_error",
+        404 => "not_found",
+        409 => "conflict_error",
+        502 => "upstream_error",
+        _ => "server_error",
+    };
+    tracing::warn!(%error, %status, "file search API error");
+    (
+        status,
+        Json(FileSearchErrorResponse {
+            error: FileSearchApiError {
+                message: error.public_message(),
+                category,
+                code: category,
+            },
+        }),
+    )
+        .into_response()
+}
+
+#[derive(Serialize)]
+struct FileSearchErrorResponse {
+    error: FileSearchApiError,
+}
+
+#[derive(Serialize)]
+struct FileSearchApiError {
+    message: String,
+    #[serde(rename = "type")]
+    category: &'static str,
+    code: &'static str,
 }
 
 fn invalid(message: impl Into<String>) -> Response {
-    error(FileSearchError::InvalidRequest(message.into()))
+    error(&FileSearchError::InvalidRequest(message.into()))
 }
 
 fn result<T: Serialize>(value: Result<T, FileSearchError>) -> Response {
     match value {
         Ok(value) => Json(value).into_response(),
-        Err(failure) => error(failure),
+        Err(failure) => error(&failure),
     }
 }
 
@@ -216,7 +247,7 @@ pub(crate) async fn file_content(State(state): State<AppState>, Path(id): Path<S
             bytes,
         )
             .into_response(),
-        Err(failure) => error(failure),
+        Err(failure) => error(&failure),
     }
 }
 

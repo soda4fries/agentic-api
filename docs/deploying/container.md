@@ -50,6 +50,7 @@ The image starts `agentic-server` in standalone mode. At minimum, set `LLM_API_B
 | `DATABASE_URL` | `$AGENTIC_API_HOME/agentic_api.db` | SQLite or PostgreSQL persistence URL |
 | `AGENTIC_API_HOME` | `/var/lib/agentic-api` | User configuration and default local-state directory |
 | `AGENTIC_FILES_STORAGE_DIR` | `$AGENTIC_API_HOME/files` | Local file bytes; mount persistent writable storage when using the Files API |
+| `AGENTIC_FILE_SEARCH_SQLITE_VEC_EXTENSION_PATH` | unset | Trusted sqlite-vec loadable extension for semantic search with a file-backed SQLite database |
 | `AGENTIC_MAX_REQUEST_BODY_SIZE_BYTES` | `10485760` | Maximum serialized request size for HTTP bodies and WebSocket messages; must be greater than zero |
 | `POSTGRES_MAX_CONNECTIONS` | `10` | Maximum PostgreSQL connections per gateway replica |
 | `POSTGRES_ACQUIRE_TIMEOUT_SECONDS` | `30` | Maximum wait for a PostgreSQL pool connection |

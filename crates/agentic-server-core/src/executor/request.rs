@@ -236,11 +236,12 @@ impl ExecutionContext {
         let client = Arc::new(reqwest::Client::new());
         let gateway_executors = GatewayExecutors::from_config(Arc::clone(&client), &cfg.tools)
             .map_err(|error| Error::Config(format!("failed to validate configured gateway tool policies: {error}")))?;
-        let file_search = crate::tool::file_search::FileSearchService::new(
+        let file_search = crate::tool::file_search::FileSearchService::configured(
             Arc::clone(&pool),
             Arc::clone(&client),
             cfg.tools.file_search.clone(),
         )
+        .await
         .map_err(|error| Error::Config(error.public_message()))?;
         Ok(Self {
             file_search: None,
