@@ -1,4 +1,6 @@
 mod apply_done;
+mod file_search;
+pub use file_search::{FileCitation, FileSearchCall, FileSearchCallResult};
 mod web_search_status;
 pub use apply_done::ApplyDone;
 pub use web_search_status::WebSearchCallStatus;
@@ -905,6 +907,8 @@ pub enum OutputItem {
     CustomToolCall(CustomToolCall),
     #[serde(rename = "shell_call")]
     ShellCall(ShellCall),
+    #[serde(rename = "file_search_call")]
+    FileSearchCall(FileSearchCall),
     #[serde(rename = "web_search_call")]
     WebSearchCall(WebSearchCall),
     #[serde(rename = "mcp_call")]
@@ -949,6 +953,7 @@ impl utoipa::PartialSchema for OutputItem {
             .item(tagged("tool_search_call", "ToolSearchCall"))
             .item(tagged("custom_tool_call", "CustomToolCall"))
             .item(tagged("shell_call", "ShellCall"))
+            .item(tagged("file_search_call", "FileSearchCall"))
             .item(tagged("web_search_call", "WebSearchCall"))
             .item(tagged("mcp_call", "McpCall"))
             .item(tagged("mcp_list_tools", "McpListTools"))
@@ -980,6 +985,7 @@ impl OutputItem {
             Self::ToolSearchCall(item) => item.agent.as_ref(),
             Self::CustomToolCall(item) => item.agent.as_ref(),
             Self::ShellCall(item) => item.agent.as_ref(),
+            Self::FileSearchCall(item) => item.agent.as_ref(),
             Self::WebSearchCall(item) => item.agent.as_ref(),
             Self::McpCall(item) => item.agent.as_ref(),
             Self::McpListTools(item) => item.agent.as_ref(),
@@ -1001,6 +1007,7 @@ impl OutputItem {
             Self::ToolSearchCall(item) => &mut item.agent,
             Self::CustomToolCall(item) => &mut item.agent,
             Self::ShellCall(item) => &mut item.agent,
+            Self::FileSearchCall(item) => &mut item.agent,
             Self::WebSearchCall(item) => &mut item.agent,
             Self::McpCall(item) => &mut item.agent,
             Self::McpListTools(item) => &mut item.agent,
@@ -1021,6 +1028,7 @@ impl OutputItem {
             | Self::ShellCall(_)
             | Self::Message(_)
             | Self::CodeInterpreterCall(_)
+            | Self::FileSearchCall(_)
             | Self::WebSearchCall(_)
             | Self::McpCall(_)
             | Self::McpListTools(_)
@@ -1042,6 +1050,7 @@ impl OutputItem {
             Self::ToolSearchCall(_) | Self::CustomToolCall(_) | Self::ShellCall(_) => true,
             Self::Message(_)
             | Self::CodeInterpreterCall(_)
+            | Self::FileSearchCall(_)
             | Self::WebSearchCall(_)
             | Self::McpCall(_)
             | Self::McpListTools(_)
@@ -1077,7 +1086,11 @@ impl OutputItem {
             Self::MultiAgentCall(item) => Some(InputItem::MultiAgentCall(item.clone().into())),
             Self::MultiAgentCallOutput(item) => Some(InputItem::MultiAgentCallOutput(item.clone().into())),
             Self::AgentMessage(item) => Some(InputItem::AgentMessage(item.clone().into())),
-            Self::CodeInterpreterCall(_) | Self::WebSearchCall(_) | Self::McpCall(_) | Self::Unknown { .. } => None,
+            Self::CodeInterpreterCall(_)
+            | Self::FileSearchCall(_)
+            | Self::WebSearchCall(_)
+            | Self::McpCall(_)
+            | Self::Unknown { .. } => None,
         }
     }
 }
@@ -1273,6 +1286,20 @@ mod tests {
                 "content": [{"type": "output_text", "text": "The parser handles errors correctly.", "annotations": []}]
             })
         );
+    }
+
+    #[test]
+    fn file_search_call_preserves_retrieved_identifiers() {
+        let wire = serde_json::json!({
+            "type": "file_search_call", "id": "fs_1", "status": "completed",
+            "queries": ["policy"], "results": [{"file_id": "file_1", "filename": "policy.txt",
+                "score": 0.9, "attributes": {}, "text": "Policy text"}]
+        });
+        let item: OutputItem = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(item.id(), Some("fs_1"));
+        assert_eq!(serde_json::to_value(&item).unwrap(), wire);
+        assert!(!item.requires_client_action(&ToolRegistry::default()));
+        assert!(item.to_input_item().is_none());
     }
 
     #[test]

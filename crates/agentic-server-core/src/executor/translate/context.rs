@@ -191,6 +191,7 @@ pub(super) fn mark_async_call(item: &mut OutputItem) -> ExecutorResult<()> {
         | OutputItem::AgentMessage(_)
         | OutputItem::Message(_)
         | OutputItem::CodeInterpreterCall(_)
+        | OutputItem::FileSearchCall(_)
         | OutputItem::ToolSearchCall(_)
         | OutputItem::ShellCall(_)
         | OutputItem::WebSearchCall(_)

@@ -27,9 +27,10 @@ use crate::executor::response_budget::{
 use crate::types::event::MessageStatus;
 use crate::types::io::output::McpListTools;
 use crate::types::io::{
-    ApplyDone, CodeInterpreterCall, CodeInterpreterCallStatus, CompactionItem, CustomToolCall, FunctionToolCall,
-    McpCall, McpCallStatus, MultiAgentCall, MultiAgentCallOutput, OutputItem, OutputMessage, ReasoningOutput,
-    ReasoningStatus, ShellCall, ShellCallStatus, ToolSearchCall, WebSearchCall, WebSearchCallStatus,
+    ApplyDone, CodeInterpreterCall, CodeInterpreterCallStatus, CompactionItem, CustomToolCall, FileSearchCall,
+    FunctionToolCall, GatewayCallStatus, McpCall, McpCallStatus, MultiAgentCall, MultiAgentCallOutput, OutputItem,
+    OutputMessage, ReasoningOutput, ReasoningStatus, ShellCall, ShellCallStatus, ToolSearchCall, WebSearchCall,
+    WebSearchCallStatus,
 };
 use crate::types::tools::ToolSearchStatus;
 
@@ -134,6 +135,7 @@ pub(super) enum ActiveItem {
     ShellCall(ShellCallState),
     CodeInterpreterCall { item: Option<CodeInterpreterCall> },
     ToolSearchCall { item: ToolSearchCall },
+    FileSearchCall { item: Option<FileSearchCall> },
     WebSearchCall { item: Option<WebSearchCall> },
     McpCall { item: McpCall },
     McpListTools { item: McpListTools },
@@ -182,6 +184,7 @@ impl ActiveItem {
                 arguments: String::with_capacity(128),
             }),
             SSEItemType::CodeInterpreterCall => Self::CodeInterpreterCall { item: None },
+            SSEItemType::FileSearchCall => Self::FileSearchCall { item: None },
             SSEItemType::ToolSearchCall => Self::ToolSearchCall {
                 item: ToolSearchCall::try_from(payload).ok()?,
             },
@@ -218,6 +221,7 @@ impl ActiveItem {
                 arguments: String::new(),
             }),
             OutputItem::CodeInterpreterCall(item) => Self::CodeInterpreterCall { item: Some(item) },
+            OutputItem::FileSearchCall(item) => Self::FileSearchCall { item: Some(item) },
             OutputItem::ToolSearchCall(item) => Self::ToolSearchCall { item },
             OutputItem::CustomToolCall(item) => Self::CustomToolCall(CustomToolCallState {
                 item,
@@ -243,6 +247,7 @@ impl ActiveItem {
             Self::CustomToolCall(state) => Some(&state.item.id),
             Self::ShellCall(state) => state.item.id.as_deref(),
             Self::CodeInterpreterCall { item } => item.as_ref().map(|item| item.id.as_str()),
+            Self::FileSearchCall { item } => item.as_ref().map(|item| item.id.as_str()),
             Self::ToolSearchCall { item } => Some(&item.id),
             Self::WebSearchCall { item } => item.as_ref().map(|item| item.id.as_str()),
             Self::McpCall { item } => Some(&item.id),
@@ -260,6 +265,7 @@ impl ActiveItem {
             Self::Reasoning(_) => SSEItemType::Reasoning,
             Self::FunctionCall(_) => SSEItemType::FunctionCall,
             Self::CodeInterpreterCall { .. } => SSEItemType::CodeInterpreterCall,
+            Self::FileSearchCall { .. } => SSEItemType::FileSearchCall,
             Self::ToolSearchCall { .. } => SSEItemType::ToolSearchCall,
             Self::CustomToolCall(_) => SSEItemType::CustomToolCall,
             Self::ShellCall(_) => SSEItemType::ShellCall,
@@ -296,6 +302,7 @@ impl ActiveItem {
             Self::CustomToolCall(state) => state.apply(payload, account, budget),
             Self::ShellCall(state) => state.apply(payload, account, budget),
             Self::CodeInterpreterCall { .. }
+            | Self::FileSearchCall { .. }
             | Self::MultiAgentCall { .. }
             | Self::MultiAgentCallOutput { .. }
             | Self::ToolSearchCall { .. }
@@ -344,6 +351,9 @@ impl ActiveItem {
                     | CodeInterpreterCallStatus::Failed
                     | CodeInterpreterCallStatus::Incomplete
             ),
+            (Self::FileSearchCall { .. }, Some(OutputItem::FileSearchCall(done))) => {
+                matches!(done.status, GatewayCallStatus::Completed | GatewayCallStatus::Failed)
+            }
             (Self::WebSearchCall { .. }, Some(OutputItem::WebSearchCall(done))) => {
                 matches!(
                     done.status,
@@ -416,6 +426,7 @@ impl ActiveItem {
             (Self::CodeInterpreterCall { item }, Some(OutputItem::CodeInterpreterCall(done))) => {
                 item.merge_done(done, item_id);
             }
+            (Self::FileSearchCall { item }, Some(OutputItem::FileSearchCall(done))) => *item = Some(done.clone()),
             (Self::ToolSearchCall { item }, Some(OutputItem::ToolSearchCall(done))) => item.merge_done(done, ()),
             (Self::CustomToolCall(state), Some(OutputItem::CustomToolCall(done))) => {
                 state.item.merge_done(done, &mut state.input);
@@ -442,6 +453,7 @@ impl ActiveItem {
             Self::Reasoning(state) => OutputItem::Reasoning(state.item),
             Self::FunctionCall(state) => state.finalize(),
             Self::CodeInterpreterCall { item } => OutputItem::CodeInterpreterCall(item?),
+            Self::FileSearchCall { item } => OutputItem::FileSearchCall(item?),
             Self::ToolSearchCall { item } => OutputItem::ToolSearchCall(item),
             Self::Message(state) => state.finalize(),
             Self::CustomToolCall(state) => state.finalize(),
@@ -468,6 +480,9 @@ impl RetainedSize for ActiveItem {
             Self::CustomToolCall(state) => state.retained_bytes(),
             Self::ShellCall(state) => state.retained_bytes(),
             Self::CodeInterpreterCall { item } => item
+                .as_ref()
+                .map_or(RETAINED_CONTAINER_OVERHEAD_BYTES, RetainedSize::retained_bytes),
+            Self::FileSearchCall { item } => item
                 .as_ref()
                 .map_or(RETAINED_CONTAINER_OVERHEAD_BYTES, RetainedSize::retained_bytes),
             Self::ToolSearchCall { item } => item.retained_bytes(),

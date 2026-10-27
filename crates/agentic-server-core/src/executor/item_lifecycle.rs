@@ -61,6 +61,7 @@ impl<'a> Lifecycle<'a> {
             | OutputItem::ToolSearchCall(_)
             | OutputItem::CustomToolCall(_)
             | OutputItem::ShellCall(_)
+            | OutputItem::FileSearchCall(_)
             | OutputItem::WebSearchCall(_)
             | OutputItem::McpCall(_)
             | OutputItem::Reasoning(_)

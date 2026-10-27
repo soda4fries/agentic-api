@@ -149,6 +149,21 @@ pub(in crate::executor) async fn emit_gateway_start_events<'a>(
         };
         emit_gateway_added_event(plan.output_index, output_item, relay).await?;
         match output_item {
+            OutputItem::FileSearchCall(call) => {
+                for event_type in [
+                    SSEEventType::FileSearchCallInProgress,
+                    SSEEventType::FileSearchCallSearching,
+                ] {
+                    let mut event = synthetic_event(
+                        event_type,
+                        [
+                            ("item_id".to_owned(), serde_json::json!(call.id)),
+                            ("output_index".to_owned(), serde_json::json!(plan.output_index)),
+                        ],
+                    )?;
+                    relay.emit_local(&mut event).await?;
+                }
+            }
             OutputItem::WebSearchCall(web_search_call) => {
                 let mut in_progress_event = synthetic_event(
                     SSEEventType::WebSearchCallInProgress,
@@ -243,6 +258,7 @@ pub(in crate::executor) async fn emit_gateway_completed_events<'a, T: GatewayPub
         };
         let output_index = plan.output_index;
         let completed_event = match public_output {
+            OutputItem::FileSearchCall(call) => Some((SSEEventType::FileSearchCallCompleted, call.id.as_str())),
             OutputItem::WebSearchCall(web_search_call) => (web_search_call.status != WebSearchCallStatus::Searching)
                 .then_some((SSEEventType::WebSearchCallCompleted, web_search_call.id.as_str())),
             OutputItem::McpCall(mcp_call) => Some((
