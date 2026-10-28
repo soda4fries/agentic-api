@@ -297,7 +297,14 @@ pub(super) async fn prepare_agent(
         continuation: None,
     };
     let mut pipeline = AgentPipeline::new(ctx, tool_search, StreamRelay::detached());
-    let turn = AgentTurn::new(&mut pipeline, exec, budget, MAX_ROUNDS).await?;
+    let turn = AgentTurn::new(
+        &mut pipeline,
+        exec,
+        budget,
+        MAX_ROUNDS,
+        Some(&parent.enriched_request.input),
+    )
+    .await?;
     let mut execution = turn.execution_state();
     let discovery = execution.take_discovery_output(&parent.enriched_request.input);
     stored

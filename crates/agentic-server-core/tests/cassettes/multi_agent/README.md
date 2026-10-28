@@ -130,10 +130,9 @@ using `store:false` and full-history replay. Enable `gitmcp.io` in the gateway's
 The recorder's shell commands receive fixture outputs and are not executed.
 
 The client sends the complete public history on each continuation. There is no
-mandatory compaction item or private gateway tree payload. The original OpenAI mixed-tools
-JSON/SSE recordings continue without any compaction item. The checked-in gateway captures
-include the earlier synthetic compaction and remain historical observations; refresh them
-with the existing recorder after deploying this change. Do not edit captured YAML by hand.
+mandatory compaction item or private gateway tree payload. Both the OpenAI and refreshed
+gateway mixed-tools JSON/SSE recordings continue without any compaction item.
+Do not edit captured YAML by hand.
 
 The recorded OpenAI `gpt-5.6-sol` SSE trial completes in two turns with
 `store:false` on both: three delegated agents perform web search, MCP lookup,
@@ -176,8 +175,13 @@ The live replay uses the refreshed client capture's opening request, then answer
 its own shell calls with results from the recorded model history. This preserves
 command/result pairing when an independent gateway recording uses different call IDs
 or a different number of client continuations. Every recorded model and tool RPC
-must be consumed. Matching preserves request
-content, tool arguments, and call IDs; it normalizes absent/null output-text
+must be consumed, with the five identical historical MCP connection/discovery
+setups represented by one required setup. Their requests and responses must match exactly;
+a second live initialization or listing fails replay. Matching preserves request
+content, tool arguments, and client call IDs. Gateway-owned MCP pairs compare their
+call/result linkage because public items do not carry the private inference call ID;
+negative tests retain unmatched outputs, argument, result, and status differences.
+The comparison normalizes absent/null output-text
 `logprobs` to the canonical empty array and ignores generated item/JSON-RPC IDs and
 concurrent capacity/status notices. Legacy expected input is upgraded through the
 existing `ResponsesInput::into_canonical_items` conversion; actual result statuses
@@ -686,8 +690,9 @@ captures send a plaintext `agent_message` from `/root` to `/root`, with multi-ag
 enabled and a prompt asking it to spawn `token_checker`. Both JSON and SSE returned
 HTTP 200 and spawned that child. The JSON capture returned the supplied token; the
 SSE capture returned `NO_AGENT_MESSAGE`. These recordings establish acceptance and
-spawning, not deterministic token delivery. The executor regression loads the actual
-captured request rather than constructing an unrecorded request fixture.
+spawning, not deterministic token delivery. Both refreshed gateway captures return
+the token. The executor regression loads the actual OpenAI and gateway requests
+rather than constructing an unrecorded request fixture.
 
 The `tool::code_interpreter::tests::multi_agent` matrix loads the gateway
 `store_false` mixed-tools, client-owned-tools, and code-interpreter recordings for
@@ -702,11 +707,15 @@ equivalent successful MCP discovery to appear only once across the session, incl
 restored children whose forked history omits the root's discovery item. The existing
 registry comparison still exposes changed or failed discovery. The original gateway
 mixed-tools captures added in PR #373 contain three extra child discovery items on
-turn 2. The refreshed stateless captures no longer repeat equivalent successful
-discovery: SSE emits no listing on turn 2, while JSON retains one failed child
-listing after an MCP connection failure. That failure remains visible under the
-existing policy and differs from the OpenAI capture, which emits no second listing.
-The raw recordings are preserved; they are not rewritten to hide this difference.
+turn 2. Both refreshed stateless captures now match OpenAI's discovery behavior:
+exactly one successful root listing on turn 1, no listing on turn 2, and no failed
+discovery items. The implementation reuses those schemas before materialization
+and connects only when an MCP tool is actually invoked. The raw-capture assertions
+require that initial listing and reject repeated or failed discovery in this
+successful scenario. Executor regressions also make the server reject subsequent
+initialization/listing and verify that passive continuation still succeeds with
+callable definitions. Retained-listing schemas remain request-scoped, and alias
+regressions cover narrowed permissions and configured-server caches.
 
 Client-tool replays inspect actual upstream requests after each completed search:
 loaded function and namespace definitions must remain callable. They also require
@@ -718,7 +727,7 @@ final answer before a later child-only cleanup response. Session comparison
 requires a root final answer somewhere in the session and no remaining client
 calls at the end; it does not require repeating that answer during cleanup.
 Static comparisons now cover all four stateless scenarios for both transports,
-including public item ID prefixes, completed tool statuses, full-history continuation,
+including message and gateway-projected item ID prefixes, completed raw tool statuses, full-history continuation,
 and successful MCP discovery suppression. The new OpenAI code-interpreter SSE capture
 contains 22 text/annotation events with `output_index: -1`. Its terminal response is
 compared semantically through the same session and ownership checks; separate wire
@@ -726,3 +735,15 @@ regressions pin the 22 raw events and the strict readers' exact rejection. Every
 gateway stream still uses strict validation. A successful terminal comparison does
 not establish wire parity for the incompatible OpenAI stream. The captured bytes
 have not been repaired or filtered.
+
+The refreshed gateway client-owned-tools JSON and SSE captures now use `fc_` IDs
+for every public function call, including SSE item events and argument references.
+The stateless contract once again requires that prefix. Public translation retains
+native ingestion identities, execution `call_id` values, and other tools' projected
+IDs. Translation regressions still cover the earlier three bare provider IDs.
+
+One pre-existing identifier-format difference remains visible: gateway streaming
+reasoning items retain bare provider IDs, while gateway JSON and the OpenAI
+captures use `rs_` IDs. Streaming item additions, references, completions, terminal
+output, and subsequent client history consistently retain those identities. These
+recordings demonstrate successful continuation, not identical reasoning-ID formats.

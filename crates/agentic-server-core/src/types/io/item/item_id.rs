@@ -1,6 +1,6 @@
 //! Typed public item identities and their known type-specific prefixes.
 
-use crate::types::io::{InOutItem, InputItem, OutputItem, OutputMessage};
+use crate::types::io::{FunctionToolCall, InOutItem, InputItem, OutputItem, OutputMessage};
 
 impl OutputMessage {
     /// Make a nonempty provider message ID valid for public history reuse.
@@ -9,6 +9,16 @@ impl OutputMessage {
     pub(crate) fn normalize_public_id(id: &mut String) {
         if !id.is_empty() && !id.starts_with("msg") {
             id.insert_str(0, "msg_");
+        }
+    }
+}
+
+impl FunctionToolCall {
+    /// Normalize the public item identity without changing its execution call ID.
+    /// Private calls lowered to another public tool shape keep their original identity.
+    pub(crate) fn normalize_public_id(id: &mut String) {
+        if !id.is_empty() && !id.starts_with("fc_") {
+            id.insert_str(0, "fc_");
         }
     }
 }

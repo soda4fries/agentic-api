@@ -137,10 +137,18 @@ pub(super) async fn run(name: &str, recording: &Cassette) {
                 assert_eq!(lifecycle(&turn.response), lifecycle(&actual), "{location}");
             }
             // Runtime metadata (usage, timings, model defaults) is not storage behavior.
-            // Output text/content is exact: the recorded model output is deterministic.
+            // Output text/content is exact. Legacy model captures may carry bare
+            // message IDs, while the public response now supplies their msg_ prefix.
+            // Seed that exact projection and retain the bidirectional mapping for
+            // subsequent management requests, pages, and stored history snapshots.
             for item in expected_body["output"].as_array().unwrap() {
-                let id = item["id"].as_str().expect("recorded output public ID");
-                ids.compare(id, id, &location);
+                let id = item["id"].as_str().expect("recorded model output ID");
+                let public = if item["type"] == "message" && !id.starts_with("msg_") {
+                    format!("msg_{id}")
+                } else {
+                    id.to_owned()
+                };
+                ids.compare(id, &public, &location);
             }
             compare_value(
                 &response_fields(&expected_body),

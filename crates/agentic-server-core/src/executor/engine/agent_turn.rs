@@ -62,8 +62,10 @@ pub(super) async fn build_tool_registry(
     agent: &mut AgentPipeline,
     exec_ctx: &ExecutionContext,
     response_budget: &ExecutorResponseBudget,
+    history: Option<&ResponsesInput>,
 ) -> ExecutorResult<ToolRegistry> {
     let mut executors = exec_ctx.gateway_executors.request_scoped();
+    let history = history.unwrap_or(&agent.request.enriched_request.input);
     let mut registry: ToolRegistry = match agent.request.enriched_request.tools.as_mut() {
         Some(tools) => {
             // The Responses adapter boundary: the registry is built from the
@@ -75,6 +77,7 @@ pub(super) async fn build_tool_registry(
             let registry = ToolRegistry::build_with_handlers_guarded(
                 &mut declarations,
                 &mut executors,
+                Some(history),
                 |bytes| response_budget.consume(bytes),
                 move || policy.acquire_materialization_permit(),
             )
@@ -88,7 +91,7 @@ pub(super) async fn build_tool_registry(
         registry
             .validate_tool_availability(state.withheld_function_names(), state.synthetic_tool_search().is_some())?;
     }
-    registry.cache_listed_mcp_tools(&agent.request.enriched_request.input);
+    registry.cache_listed_mcp_tools(history);
     Ok(registry)
 }
 
@@ -162,7 +165,7 @@ impl AgentExecutionState {
         exec: &ExecutionContext,
         budget: &ExecutorResponseBudget,
     ) -> ExecutorResult<()> {
-        self.registry = build_tool_registry(agent, exec, budget).await?;
+        self.registry = build_tool_registry(agent, exec, budget, None).await?;
         Ok(())
     }
 
@@ -218,8 +221,9 @@ impl<'a> AgentTurn<'a> {
         exec_ctx: &'a ExecutionContext,
         response_budget: &ExecutorResponseBudget,
         max_rounds: NonZeroUsize,
+        history: Option<&ResponsesInput>,
     ) -> ExecutorResult<Self> {
-        let registry = build_tool_registry(agent, exec_ctx, response_budget).await?;
+        let registry = build_tool_registry(agent, exec_ctx, response_budget, history).await?;
         let tool_call_budget = BuiltInToolCallBudget::new(agent.request.original_request.max_tool_calls_limit()?);
         Ok(Self {
             pipeline: agent,

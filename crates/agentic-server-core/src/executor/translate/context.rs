@@ -5,7 +5,7 @@ use crate::tool::{NamespaceMap, ToolType};
 use crate::types::event::ResponseStatus;
 use crate::types::io::MultiAgentAction;
 use crate::types::io::ToolChoice;
-use crate::types::io::{OutputItem, OutputMessage};
+use crate::types::io::{FunctionToolCall, OutputItem, OutputMessage};
 use crate::types::request_response::{RequestPayload, ResponsePayload, StandardResponseFields};
 use crate::types::tools::ResponsesTool;
 use serde_json::{Map, Value, json};
@@ -115,12 +115,12 @@ impl TranslationContext {
             complete_response_fields(response, &self.response_fields)?;
             if let Some(output) = response.get_mut("output").and_then(Value::as_array_mut) {
                 for item in output {
-                    normalize_output_item(item);
+                    normalize_output_item(item, self);
                 }
             }
         }
         if let Some(item) = wire.rest.get_mut("item") {
-            normalize_output_item(item);
+            normalize_output_item(item, self);
         }
         if let Some(part) = wire.rest.get_mut("part") {
             normalize_content_part(part);
@@ -147,6 +147,12 @@ impl TranslationContext {
         self.withheld_function_names.contains(name)
     }
 
+    fn is_client_function(&self, name: &str) -> bool {
+        matches!(self.tool_type(name), ToolType::Function | ToolType::CodexNamespace)
+            && !self.is_gateway_owned(name)
+            && !self.is_collaboration(name)
+    }
+
     pub(super) fn tool_search_is_active(&self) -> bool {
         self.tool_search_active
     }
@@ -171,6 +177,11 @@ impl TranslationContext {
         for item in output.iter_mut() {
             if let OutputItem::Message(message) = item {
                 OutputMessage::normalize_public_id(&mut message.id);
+            }
+            if let OutputItem::FunctionCall(call) = item
+                && self.is_client_function(&call.name)
+            {
+                FunctionToolCall::normalize_public_id(&mut call.id);
             }
             if let OutputItem::FunctionCall(call) = item
                 && self.is_async_tool(&call.name)
@@ -240,7 +251,7 @@ fn complete_response_fields(response: &mut Map<String, Value>, fields: &Standard
     Ok(())
 }
 
-fn normalize_output_item(item: &mut Value) {
+fn normalize_output_item(item: &mut Value, context: &TranslationContext) {
     let Some(item) = item.as_object_mut() else {
         return;
     };
@@ -261,6 +272,15 @@ fn normalize_output_item(item: &mut Value) {
         if item.get("phase").is_some_and(Value::is_null) {
             item.remove("phase");
         }
+    }
+    if item.get("type").and_then(Value::as_str) == Some("function_call")
+        && item
+            .get("name")
+            .and_then(Value::as_str)
+            .is_some_and(|name| context.is_client_function(name))
+        && let Some(Value::String(id)) = item.get_mut("id")
+    {
+        FunctionToolCall::normalize_public_id(id);
     }
     if let Some(content) = item.get_mut("content").and_then(Value::as_array_mut) {
         for part in content {

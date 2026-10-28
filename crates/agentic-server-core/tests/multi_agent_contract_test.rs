@@ -136,6 +136,50 @@ fn stateless_session(scenario: &str, provider: &str, mode: &str) -> RecordedSess
         assert!(turn["request"]["body"].get("conversation").is_none());
     }
     let cassette: support::Cassette = serde_json::from_value(capture).unwrap();
+    let mut discovery_count = 0;
+    for (turn_index, turn) in cassette.turns.iter().enumerate() {
+        let terminal = turn.response.body.clone().unwrap_or_else(|| {
+            support::recorded_named_sse_events(turn)
+                .into_iter()
+                .find(|event| event["type"] == "response.completed")
+                .expect("successful recorded response")["response"]
+                .clone()
+        });
+        for item in terminal["output"].as_array().unwrap() {
+            assert!(item["id"].as_str().is_some_and(|id| !id.is_empty()));
+            if item["type"] == "mcp_list_tools" {
+                assert_eq!(turn_index, 0, "discovery must not repeat on continuation");
+                assert!(
+                    item.get("error").is_none_or(serde_json::Value::is_null),
+                    "{}: unexpected MCP discovery failure: {item}",
+                    path.display()
+                );
+                discovery_count += 1;
+            }
+            if matches!(
+                item["type"].as_str(),
+                Some(
+                    "function_call"
+                        | "custom_tool_call"
+                        | "shell_call"
+                        | "tool_search_call"
+                        | "web_search_call"
+                        | "mcp_call"
+                        | "code_interpreter_call"
+                )
+            ) {
+                // Inspect the captured bytes before typed serde defaults can
+                // fill an omitted or null function-call status.
+                assert_eq!(
+                    item.get("status"),
+                    Some(&serde_json::json!("completed")),
+                    "{}: {item}",
+                    path.display()
+                );
+            }
+        }
+    }
+    assert_eq!(discovery_count, usize::from(scenario == "mixed-tools"));
     let session = if provider == "openai-reference" && scenario == "code-interpreter" && mode == "streaming" {
         // The separate wire regression pins this recording's negative-index events
         // and strict rejection. Only terminal response semantics are compared here.

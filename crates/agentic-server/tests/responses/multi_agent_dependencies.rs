@@ -29,7 +29,7 @@ struct Exchange {
     response: RecordedResponse,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, PartialEq, Deserialize)]
 struct Request {
     method: String,
     path: String,
@@ -37,7 +37,7 @@ struct Request {
     query_params: BTreeMap<String, String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, PartialEq, Deserialize)]
 struct RecordedResponse {
     status_code: u16,
     headers: BTreeMap<String, String>,
@@ -65,15 +65,33 @@ impl Drop for Dependencies {
 impl Dependencies {
     pub async fn start(path: &str) -> Self {
         let capture: Capture = serde_yaml::from_str(&read_to_string(path).expect("dependency cassette")).unwrap();
+        let mut turns: Vec<Option<Exchange>> = Vec::new();
+        let mut setup: HashMap<String, usize> = HashMap::new();
+        for turn in capture
+            .turns
+            .into_iter()
+            .filter(|turn| turn.request.path != "/health")
+            .filter(|turn| !(turn.request.method != "POST" && turn.response.status_code == 405))
+        {
+            let method = turn.request.body["method"].as_str().unwrap_or_default();
+            if turn.request.path == "/openai/tiktoken"
+                && matches!(method, "initialize" | "notifications/initialized" | "tools/list")
+            {
+                if let Some(index) = setup.get(method) {
+                    let first: &Exchange = turns[*index].as_ref().unwrap();
+                    // This fixture's MCP work finishes before the client shell
+                    // continuation. Require one connection/discovery setup;
+                    // another live setup request has no matching exchange.
+                    assert_eq!(turn.request, first.request, "recorded MCP setup changed");
+                    assert_eq!(turn.response, first.response, "recorded MCP setup changed");
+                    continue;
+                }
+                setup.insert(method.to_owned(), turns.len());
+            }
+            turns.push(Some(turn));
+        }
         let state = Arc::new(Mutex::new(Replay {
-            turns: capture
-                .turns
-                .into_iter()
-                .filter(|turn| turn.request.path != "/health")
-                // Unsupported MCP polling/teardown is timing-dependent, unlike tool RPCs.
-                .filter(|turn| !(turn.request.method != "POST" && turn.response.status_code == 405))
-                .map(Some)
-                .collect(),
+            turns,
             errors: Vec::new(),
         }));
         let router = Router::new().fallback(replay).with_state(state.clone());
@@ -186,7 +204,24 @@ fn normalize_request(body: &mut Value) {
     let Some(input) = body["input"].as_array_mut() else {
         return;
     };
+    // This fixture declares this MCP tool on the gateway. Its public record
+    // retains the result but not the private inference call ID. Compare the
+    // call/result relationship without changing client-owned call IDs.
+    let mut mcp_calls = HashMap::new();
     for item in input.iter_mut() {
+        if item["type"] == "function_call" && item["name"] == "mcp__gitmcp_tiktoken__search_tiktoken_documentation" {
+            let id = item["call_id"].as_str().expect("MCP function call ID").to_owned();
+            let canonical = format!("recorded_mcp_{}", mcp_calls.len());
+            assert!(
+                mcp_calls.insert(id, canonical.clone()).is_none(),
+                "duplicate MCP call ID"
+            );
+            item["call_id"] = json!(canonical);
+        } else if item["type"] == "function_call_output"
+            && let Some(canonical) = item["call_id"].as_str().and_then(|id| mcp_calls.get(id))
+        {
+            item["call_id"] = json!(canonical);
+        }
         if item["type"] != "function_call" {
             continue;
         }
@@ -196,6 +231,33 @@ fn normalize_request(body: &mut Value) {
         {
             item["arguments"] = json!(serde_json::to_string(&command).unwrap());
         }
+    }
+}
+
+#[test]
+fn gateway_mcp_comparison_preserves_pairing_and_payloads() {
+    let fixture = json!({"input":[
+        {"type":"function_call","name":"mcp__gitmcp_tiktoken__search_tiktoken_documentation",
+            "call_id":"provider_call","arguments":"{\"query\":\"encoding\"}"},
+        {"type":"function_call_output","call_id":"provider_call","output":"result","status":"completed"}
+    ]});
+    let mut expected = fixture.clone();
+    normalize_request(&mut expected);
+    let mut returned = fixture.clone();
+    returned["input"][0]["call_id"] = json!("mcp_public");
+    returned["input"][1]["call_id"] = json!("mcp_public");
+    normalize_request(&mut returned);
+    assert_eq!(expected, returned);
+    for (index, field, value) in [
+        (1, "call_id", "unmatched"),
+        (1, "output", "different result"),
+        (0, "arguments", "{}"),
+        (1, "status", "incomplete"),
+    ] {
+        let mut changed = fixture.clone();
+        changed["input"][index][field] = json!(value);
+        normalize_request(&mut changed);
+        assert_ne!(expected, changed, "{field} must remain observable");
     }
 }
 

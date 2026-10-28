@@ -245,6 +245,7 @@ impl ToolRegistry {
         Self::build_with_handlers_guarded(
             tools,
             executors,
+            None,
             |bytes| {
                 remaining = remaining.checked_sub(bytes).ok_or_else(|| {
                     ToolError::Execution(format!(
@@ -258,15 +259,13 @@ impl ToolRegistry {
         .await
     }
 
-    /// Builds a registry while charging each guarded MCP discovery to a caller-owned budget.
+    /// Builds a registry from current declarations and retained successful MCP listings.
     ///
-    /// The callback runs before discovered metadata is copied into the registry or request, so
-    /// a request-wide executor budget can reject aggregate results without retaining the item
-    /// that crossed the limit. Keeping the callback generic preserves the dependency direction:
-    /// tool registration does not depend on executor error or policy types.
+    /// Charges metadata before registry insertion; generic callbacks keep executor error/policy types out of tools.
     pub(crate) async fn build_with_handlers_guarded<E, Acquire, AcquireFuture, Guard>(
         tools: &mut [ToolDeclaration],
         executors: &mut GatewayExecutors,
+        history: Option<&ResponsesInput>,
         mut consume_materialized: impl FnMut(usize) -> Result<(), E>,
         mut acquire_materialization: Acquire,
     ) -> Result<Self, E>
@@ -299,7 +298,8 @@ impl ToolRegistry {
                 }
                 ToolDeclaration::Mcp(p) => {
                     let _materialization_guard = acquire_materialization().await;
-                    let tool_set = match executors.mcp_server_tools(p).await {
+                    let listing = history.and_then(|input| McpHandler::reusable_listing(input, p));
+                    let tool_set = match executors.mcp_server_tools(p, listing).await {
                         Ok(tool_set) => tool_set,
                         // Config errors mean the declaration is invalid; the client can fix it.
                         Err(error @ ToolError::Config(_)) => return Err(error.into()),
@@ -1239,6 +1239,7 @@ mod tests {
         let error = ToolRegistry::build_with_handlers_guarded(
             &mut tools,
             &mut executors,
+            None,
             |bytes| {
                 consumed = consumed.saturating_add(bytes);
                 if consumed > 2_048 {

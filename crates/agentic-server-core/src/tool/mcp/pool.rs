@@ -123,7 +123,10 @@ impl McpClientPool {
     }
 }
 
-fn server_entry_from_param(param: &McpToolParam, allowed_hosts: &[String]) -> Option<(String, McpServerEntry)> {
+pub(crate) fn server_entry_from_param(
+    param: &McpToolParam,
+    allowed_hosts: &[String],
+) -> Option<(String, McpServerEntry)> {
     let Some(server_label) = clean_string(Some(&param.server_label)) else {
         tracing::debug!("MCP tool param has no server_label");
         return None;

@@ -109,32 +109,35 @@ pub(super) fn client_agent_message_output(request: &Value) -> Option<Vec<Value>>
 
 #[tokio::test]
 async fn recorded_client_authored_agent_message_is_accepted() {
-    for stream in [false, true] {
-        let (exec, server) = setup().await;
-        let mode = if stream { "streaming" } else { "nonstreaming" };
-        let path = format!(
-            "{}/tests/cassettes/store_false/multi-agent-store-false-openai-reference-client-agent-message-gpt-5.6-sol-{mode}.yaml",
-            env!("CARGO_MANIFEST_DIR")
-        );
-        let cassette: Value = serde_yaml::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
-        let request: RequestPayload = serde_json::from_value(cassette["turns"][0]["request"]["body"].clone()).unwrap();
-        assert!(!request.store);
-        assert_eq!(request.stream, stream);
-        let result = response(request, exec.clone()).await;
-        assert_eq!(result.status, "completed");
-        assert!(result.output.iter().any(|item| {
-            item.agent()
-                .is_some_and(|agent| agent.agent_name == "/root/token_checker")
-        }));
-        // Both captures accept and spawn. Their model answers differ, so token
-        // delivery is not asserted as a deterministic provider contract.
-        assert!(
-            !result
-                .output
-                .iter()
-                .any(|item| matches!(item, OutputItem::Compaction(_)))
-        );
-        assert!(exec.resp_handler.retrieve(&result.id).await.is_err());
-        server.abort();
+    for (provider, model) in [("openai-reference", "gpt-5.6-sol"), ("gateway", "Qwen-Qwen3.8-27B-FP8")] {
+        for stream in [false, true] {
+            let (exec, server) = setup().await;
+            let mode = if stream { "streaming" } else { "nonstreaming" };
+            let path = format!(
+                "{}/tests/cassettes/store_false/multi-agent-store-false-{provider}-client-agent-message-{model}-{mode}.yaml",
+                env!("CARGO_MANIFEST_DIR")
+            );
+            let cassette: Value = serde_yaml::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+            let request: RequestPayload =
+                serde_json::from_value(cassette["turns"][0]["request"]["body"].clone()).unwrap();
+            assert!(!request.store);
+            assert_eq!(request.stream, stream);
+            let result = response(request, exec.clone()).await;
+            assert_eq!(result.status, "completed");
+            assert!(result.output.iter().any(|item| {
+                item.agent()
+                    .is_some_and(|agent| agent.agent_name == "/root/token_checker")
+            }));
+            // Both captures accept and spawn. Their model answers differ, so token
+            // delivery is not asserted as a deterministic provider contract.
+            assert!(
+                !result
+                    .output
+                    .iter()
+                    .any(|item| matches!(item, OutputItem::Compaction(_)))
+            );
+            assert!(exec.resp_handler.retrieve(&result.id).await.is_err());
+            server.abort();
+        }
     }
 }

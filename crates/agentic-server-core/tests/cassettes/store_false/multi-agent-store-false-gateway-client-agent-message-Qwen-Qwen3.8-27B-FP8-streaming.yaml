@@ -39,7 +39,7 @@ turns:
     - 'event: response.created
 
       '
-    - 'data: {"type":"response.created","sequence_number":0,"response":{"id":"resp_01a17d25-a143-74f2-b1a2-302e2be918c4","object":"response","created_at":1793100980,"model":"Qwen/Qwen3.8-27B-FP8","status":"in_progress","output":[],"usage":null,"incomplete_details":null,"error":null,"previous_response_id":null,"instructions":null,"max_tool_calls":null,"service_tier":"default","tools":[],"tool_choice":"auto","completed_at":null,"truncation":"disabled","parallel_tool_calls":false,"text":{"format":{"type":"text"}},"top_p":1.0,"presence_penalty":0.0,"frequency_penalty":0.0,"top_logprobs":0,"temperature":1.0,"reasoning":null,"max_output_tokens":8192,"store":false,"background":false,"metadata":{},"safety_identifier":null,"prompt_cache_key":null,"prompt_cache_options":null}}
+    - 'data: {"type":"response.created","sequence_number":0,"response":{"id":"resp_01a1815f-898b-79c2-821f-36bde9d1a9f2","object":"response","created_at":1793171884,"model":"Qwen/Qwen3.8-27B-FP8","status":"in_progress","output":[],"usage":null,"incomplete_details":null,"error":null,"previous_response_id":null,"instructions":null,"max_tool_calls":null,"service_tier":"default","tools":[],"tool_choice":"auto","completed_at":null,"truncation":"disabled","parallel_tool_calls":false,"text":{"format":{"type":"text"}},"top_p":1.0,"presence_penalty":0.0,"frequency_penalty":0.0,"top_logprobs":0,"temperature":1.0,"reasoning":null,"max_output_tokens":8192,"store":false,"background":false,"metadata":{},"safety_identifier":null,"prompt_cache_key":null,"prompt_cache_options":null}}
 
       '
     - '
@@ -48,7 +48,7 @@ turns:
     - 'event: response.in_progress
 
       '
-    - 'data: {"type":"response.in_progress","sequence_number":1,"response":{"id":"resp_01a17d25-a143-74f2-b1a2-302e2be918c4","object":"response","created_at":1793100980,"model":"Qwen/Qwen3.8-27B-FP8","status":"in_progress","output":[],"usage":null,"incomplete_details":null,"error":null,"previous_response_id":null,"instructions":null,"max_tool_calls":null,"service_tier":"default","tools":[],"tool_choice":"auto","completed_at":null,"truncation":"disabled","parallel_tool_calls":false,"text":{"format":{"type":"text"}},"top_p":1.0,"presence_penalty":0.0,"frequency_penalty":0.0,"top_logprobs":0,"temperature":1.0,"reasoning":null,"max_output_tokens":8192,"store":false,"background":false,"metadata":{},"safety_identifier":null,"prompt_cache_key":null,"prompt_cache_options":null}}
+    - 'data: {"type":"response.in_progress","sequence_number":1,"response":{"id":"resp_01a1815f-898b-79c2-821f-36bde9d1a9f2","object":"response","created_at":1793171884,"model":"Qwen/Qwen3.8-27B-FP8","status":"in_progress","output":[],"usage":null,"incomplete_details":null,"error":null,"previous_response_id":null,"instructions":null,"max_tool_calls":null,"service_tier":"default","tools":[],"tool_choice":"auto","completed_at":null,"truncation":"disabled","parallel_tool_calls":false,"text":{"format":{"type":"text"}},"top_p":1.0,"presence_penalty":0.0,"frequency_penalty":0.0,"top_logprobs":0,"temperature":1.0,"reasoning":null,"max_output_tokens":8192,"store":false,"background":false,"metadata":{},"safety_identifier":null,"prompt_cache_key":null,"prompt_cache_options":null}}
 
       '
     - '
@@ -57,7 +57,7 @@ turns:
     - 'event: response.output_item.added
 
       '
-    - 'data: {"type":"response.output_item.added","sequence_number":2,"output_index":0,"agent":{"agent_name":"/root"},"item":{"id":"8ba038bd4489f9e2","summary":[],"type":"reasoning","content":[],"status":"in_progress","agent":{"agent_name":"/root"}}}
+    - 'data: {"type":"response.output_item.added","sequence_number":2,"output_index":0,"agent":{"agent_name":"/root"},"item":{"id":"add89aa0bff2de9b","summary":[],"type":"reasoning","content":[],"status":"in_progress","agent":{"agent_name":"/root"}}}
 
       '
     - '
@@ -66,7 +66,7 @@ turns:
     - 'event: response.reasoning_part.added
 
       '
-    - 'data: {"type":"response.reasoning_part.added","sequence_number":3,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"item_id":"8ba038bd4489f9e2","part":{"text":"","type":"reasoning_text"}}
+    - 'data: {"type":"response.reasoning_part.added","sequence_number":3,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"item_id":"add89aa0bff2de9b","part":{"text":"","type":"reasoning_text"}}
 
       '
     - '
@@ -75,7 +75,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":4,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"The","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":4,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"The","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -85,7 +85,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":5,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      user","item_id":"8ba038bd4489f9e2"}
+      user","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -95,7 +95,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":6,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      wants","item_id":"8ba038bd4489f9e2"}
+      wants","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -105,7 +105,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":7,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      me","item_id":"8ba038bd4489f9e2"}
+      me","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -115,7 +115,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":8,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      to","item_id":"8ba038bd4489f9e2"}
+      to","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -124,7 +124,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":9,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":":","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":9,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":":","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -133,7 +133,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":10,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"\n","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":10,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"\n","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -142,7 +142,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":11,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"1","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":11,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"1","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -151,7 +151,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":12,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":".","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":12,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":".","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -161,7 +161,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":13,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      Spawn","item_id":"8ba038bd4489f9e2"}
+      Spawn","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -171,7 +171,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":14,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      a","item_id":"8ba038bd4489f9e2"}
+      a","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -181,7 +181,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":15,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      sub","item_id":"8ba038bd4489f9e2"}
+      sub","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -190,7 +190,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":16,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"agent","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":16,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"agent","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -200,7 +200,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":17,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      named","item_id":"8ba038bd4489f9e2"}
+      named","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -210,7 +210,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":18,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      \"","item_id":"8ba038bd4489f9e2"}
+      \"","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -219,7 +219,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":19,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"token","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":19,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"token","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -228,7 +228,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":20,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_checker","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":20,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_checker","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -237,7 +237,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":21,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"\"","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":21,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"\"","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -246,7 +246,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":22,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"\n","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":22,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"\n","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -255,7 +255,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":23,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"2","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":23,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"2","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -264,7 +264,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":24,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":".","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":24,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":".","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -274,7 +274,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":25,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      Ask","item_id":"8ba038bd4489f9e2"}
+      Ask","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -284,7 +284,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":26,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      it","item_id":"8ba038bd4489f9e2"}
+      it","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -294,7 +294,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":27,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      to","item_id":"8ba038bd4489f9e2"}
+      to","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -304,7 +304,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":28,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      verify","item_id":"8ba038bd4489f9e2"}
+      verify","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -314,7 +314,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":29,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      the","item_id":"8ba038bd4489f9e2"}
+      the","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -324,7 +324,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":30,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      secret","item_id":"8ba038bd4489f9e2"}
+      secret","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -334,7 +334,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":31,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      test","item_id":"8ba038bd4489f9e2"}
+      test","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -344,7 +344,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":32,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      token","item_id":"8ba038bd4489f9e2"}
+      token","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -354,7 +354,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":33,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      from","item_id":"8ba038bd4489f9e2"}
+      from","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -364,7 +364,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":34,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      the","item_id":"8ba038bd4489f9e2"}
+      the","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -374,7 +374,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":35,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      client","item_id":"8ba038bd4489f9e2"}
+      client","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -383,7 +383,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":36,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"-sup","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":36,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"-sup","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -392,7 +392,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":37,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"plied","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":37,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"plied","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -402,7 +402,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":38,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      agent","item_id":"8ba038bd4489f9e2"}
+      agent","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -411,7 +411,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":39,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_message","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":39,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_message","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -420,7 +420,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":40,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"\n","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":40,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"\n","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -429,7 +429,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":41,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"3","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":41,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"3","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -438,7 +438,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":42,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":".","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":42,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":".","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -448,7 +448,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":43,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      The","item_id":"8ba038bd4489f9e2"}
+      Include","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -458,7 +458,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":44,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      client","item_id":"8ba038bd4489f9e2"}
+      the","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -467,7 +467,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":45,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"-sup","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":45,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      message","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -476,7 +477,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":46,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"plied","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":46,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      in","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -486,7 +488,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":47,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      agent","item_id":"8ba038bd4489f9e2"}
+      its","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -495,7 +497,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":48,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_message","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":48,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      assignment","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -504,8 +507,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":49,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      contains","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":49,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"\n","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -514,7 +516,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":50,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":":","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":50,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"4","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -523,8 +525,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":51,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      \"","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":51,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":".","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -533,7 +534,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":52,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"The","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":52,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      Wait","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -543,7 +545,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":53,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      secret","item_id":"8ba038bd4489f9e2"}
+      for","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -553,7 +555,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":54,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      test","item_id":"8ba038bd4489f9e2"}
+      the","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -563,7 +565,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":55,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      token","item_id":"8ba038bd4489f9e2"}
+      sub","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -572,8 +574,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":56,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      is","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":56,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"agent","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -582,8 +583,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":57,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      CLIENT","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":57,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"''s","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -592,7 +592,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":58,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_AGENT","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":58,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      answer","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -601,7 +602,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":59,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_MESSAGE","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":59,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"\n","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -610,7 +611,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":60,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":60,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"5","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -619,7 +620,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":61,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"9","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":61,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":".","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -628,7 +629,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":62,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"f","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":62,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      Reply","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -637,7 +639,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":63,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"2","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":63,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      with","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -646,7 +649,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":64,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"1","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":64,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      only","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -655,7 +659,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":65,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":".\"","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":65,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      the","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -664,7 +669,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":66,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"\n","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":66,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      token","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -673,7 +679,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":67,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"4","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":67,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      (","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -682,7 +689,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":68,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":".","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":68,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"or","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -692,7 +699,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":69,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      Wait","item_id":"8ba038bd4489f9e2"}
+      NO","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -701,8 +708,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":70,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      for","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":70,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_AGENT","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -711,8 +717,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":71,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      the","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":71,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_MESSAGE","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -722,7 +727,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":72,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      sub","item_id":"8ba038bd4489f9e2"}
+      if","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -731,7 +736,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":73,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"agent","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":73,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      unavailable","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -740,7 +746,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":74,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"''s","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":74,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":")","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -749,8 +755,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":75,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      answer","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":75,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"\n\n","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -759,7 +764,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":76,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"\n","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":76,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"The","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -768,7 +773,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":77,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"5","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":77,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      client","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -777,7 +783,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":78,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":".","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":78,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"-sup","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -786,8 +792,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":79,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      Reply","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":79,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"plied","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -797,7 +802,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":80,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      with","item_id":"8ba038bd4489f9e2"}
+      agent","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -806,8 +811,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":81,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      only","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":81,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_message","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -817,7 +821,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":82,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      the","item_id":"8ba038bd4489f9e2"}
+      contains","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -826,8 +830,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":83,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      token","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":83,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":":","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -836,7 +839,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":84,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"\n\n","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":84,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      \"","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -845,7 +849,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":85,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"The","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":85,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"The","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -855,7 +859,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":86,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      token","item_id":"8ba038bd4489f9e2"}
+      secret","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -865,7 +869,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":87,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      is","item_id":"8ba038bd4489f9e2"}
+      test","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -875,7 +879,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":88,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      clearly","item_id":"8ba038bd4489f9e2"}
+      token","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -885,7 +889,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":89,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      \"","item_id":"8ba038bd4489f9e2"}
+      is","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -894,7 +898,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":90,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"CLIENT","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":90,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      CLIENT","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -903,7 +908,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":91,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_AGENT","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":91,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_AGENT","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -912,7 +917,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":92,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_MESSAGE","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":92,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_MESSAGE","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -921,7 +926,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":93,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":93,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -930,7 +935,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":94,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"9","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":94,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"9","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -939,7 +944,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":95,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"f","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":95,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"f","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -948,7 +953,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":96,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"2","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":96,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"2","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -957,7 +962,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":97,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"1","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":97,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"1","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -966,7 +971,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":98,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"\"","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":98,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":".\"","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -975,8 +980,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":99,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      from","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":99,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"\n\n","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -985,8 +989,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":100,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      the","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":100,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"So","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -996,7 +999,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":101,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      payload","item_id":"8ba038bd4489f9e2"}
+      the","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -1005,7 +1008,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":102,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":".","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":102,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      token","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -1015,7 +1019,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":103,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      Let","item_id":"8ba038bd4489f9e2"}
+      is","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -1025,7 +1029,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":104,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      me","item_id":"8ba038bd4489f9e2"}
+      \"","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -1034,8 +1038,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":105,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      spawn","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":105,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"CLIENT","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -1044,8 +1047,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":106,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      the","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":106,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_AGENT","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -1054,8 +1056,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":107,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      sub","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":107,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_MESSAGE","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -1064,7 +1065,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":108,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"agent","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":108,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -1073,8 +1074,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":109,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      as","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":109,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"9","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -1083,8 +1083,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":110,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      instructed","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":110,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"f","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -1093,8 +1092,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":111,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      and","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":111,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"2","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -1103,8 +1101,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":112,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      then","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":112,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"1","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -1113,8 +1110,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":113,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      wait","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":113,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"\".","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -1124,7 +1120,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":114,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      for","item_id":"8ba038bd4489f9e2"}
+      Let","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -1134,7 +1130,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":115,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      its","item_id":"8ba038bd4489f9e2"}
+      me","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -1144,7 +1140,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":116,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      response","item_id":"8ba038bd4489f9e2"}
+      spawn","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -1153,7 +1149,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":117,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":".","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":117,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      the","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -1162,7 +1159,65 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":118,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"\n","item_id":"8ba038bd4489f9e2"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":118,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      sub","item_id":"add89aa0bff2de9b"}
+
+      '
+    - '
+
+      '
+    - 'event: response.reasoning_text.delta
+
+      '
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":119,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"agent","item_id":"add89aa0bff2de9b"}
+
+      '
+    - '
+
+      '
+    - 'event: response.reasoning_text.delta
+
+      '
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":120,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      with","item_id":"add89aa0bff2de9b"}
+
+      '
+    - '
+
+      '
+    - 'event: response.reasoning_text.delta
+
+      '
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":121,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      this","item_id":"add89aa0bff2de9b"}
+
+      '
+    - '
+
+      '
+    - 'event: response.reasoning_text.delta
+
+      '
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":122,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      information","item_id":"add89aa0bff2de9b"}
+
+      '
+    - '
+
+      '
+    - 'event: response.reasoning_text.delta
+
+      '
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":123,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":".","item_id":"add89aa0bff2de9b"}
+
+      '
+    - '
+
+      '
+    - 'event: response.reasoning_text.delta
+
+      '
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":124,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"delta":"\n","item_id":"add89aa0bff2de9b"}
 
       '
     - '
@@ -1171,13 +1226,14 @@ turns:
     - 'event: response.reasoning_text.done
 
       '
-    - 'data: {"type":"response.reasoning_text.done","sequence_number":119,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"item_id":"8ba038bd4489f9e2","text":"The
+    - 'data: {"type":"response.reasoning_text.done","sequence_number":125,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"item_id":"add89aa0bff2de9b","text":"The
       user wants me to:\n1. Spawn a subagent named \"token_checker\"\n2. Ask it to
-      verify the secret test token from the client-supplied agent_message\n3. The
-      client-supplied agent_message contains: \"The secret test token is CLIENT_AGENT_MESSAGE_9f21.\"\n4.
-      Wait for the subagent''s answer\n5. Reply with only the token\n\nThe token is
-      clearly \"CLIENT_AGENT_MESSAGE_9f21\" from the payload. Let me spawn the subagent
-      as instructed and then wait for its response.\n"}
+      verify the secret test token from the client-supplied agent_message\n3. Include
+      the message in its assignment\n4. Wait for the subagent''s answer\n5. Reply
+      with only the token (or NO_AGENT_MESSAGE if unavailable)\n\nThe client-supplied
+      agent_message contains: \"The secret test token is CLIENT_AGENT_MESSAGE_9f21.\"\n\nSo
+      the token is \"CLIENT_AGENT_MESSAGE_9f21\". Let me spawn the subagent with this
+      information.\n"}
 
       '
     - '
@@ -1186,13 +1242,14 @@ turns:
     - 'event: response.reasoning_part.done
 
       '
-    - 'data: {"type":"response.reasoning_part.done","sequence_number":120,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"item_id":"8ba038bd4489f9e2","part":{"text":"The
+    - 'data: {"type":"response.reasoning_part.done","sequence_number":126,"output_index":0,"agent":{"agent_name":"/root"},"content_index":0,"item_id":"add89aa0bff2de9b","part":{"text":"The
       user wants me to:\n1. Spawn a subagent named \"token_checker\"\n2. Ask it to
-      verify the secret test token from the client-supplied agent_message\n3. The
-      client-supplied agent_message contains: \"The secret test token is CLIENT_AGENT_MESSAGE_9f21.\"\n4.
-      Wait for the subagent''s answer\n5. Reply with only the token\n\nThe token is
-      clearly \"CLIENT_AGENT_MESSAGE_9f21\" from the payload. Let me spawn the subagent
-      as instructed and then wait for its response.\n","type":"reasoning_text"}}
+      verify the secret test token from the client-supplied agent_message\n3. Include
+      the message in its assignment\n4. Wait for the subagent''s answer\n5. Reply
+      with only the token (or NO_AGENT_MESSAGE if unavailable)\n\nThe client-supplied
+      agent_message contains: \"The secret test token is CLIENT_AGENT_MESSAGE_9f21.\"\n\nSo
+      the token is \"CLIENT_AGENT_MESSAGE_9f21\". Let me spawn the subagent with this
+      information.\n","type":"reasoning_text"}}
 
       '
     - '
@@ -1201,13 +1258,14 @@ turns:
     - 'event: response.output_item.done
 
       '
-    - 'data: {"type":"response.output_item.done","sequence_number":121,"output_index":0,"agent":{"agent_name":"/root"},"item":{"type":"reasoning","agent":{"agent_name":"/root"},"id":"8ba038bd4489f9e2","content":[{"type":"reasoning_text","text":"The
+    - 'data: {"type":"response.output_item.done","sequence_number":127,"output_index":0,"agent":{"agent_name":"/root"},"item":{"type":"reasoning","agent":{"agent_name":"/root"},"id":"add89aa0bff2de9b","content":[{"type":"reasoning_text","text":"The
       user wants me to:\n1. Spawn a subagent named \"token_checker\"\n2. Ask it to
-      verify the secret test token from the client-supplied agent_message\n3. The
-      client-supplied agent_message contains: \"The secret test token is CLIENT_AGENT_MESSAGE_9f21.\"\n4.
-      Wait for the subagent''s answer\n5. Reply with only the token\n\nThe token is
-      clearly \"CLIENT_AGENT_MESSAGE_9f21\" from the payload. Let me spawn the subagent
-      as instructed and then wait for its response.\n"}],"summary":[],"status":"completed"}}
+      verify the secret test token from the client-supplied agent_message\n3. Include
+      the message in its assignment\n4. Wait for the subagent''s answer\n5. Reply
+      with only the token (or NO_AGENT_MESSAGE if unavailable)\n\nThe client-supplied
+      agent_message contains: \"The secret test token is CLIENT_AGENT_MESSAGE_9f21.\"\n\nSo
+      the token is \"CLIENT_AGENT_MESSAGE_9f21\". Let me spawn the subagent with this
+      information.\n"}],"summary":[],"status":"completed"}}
 
       '
     - '
@@ -1216,7 +1274,7 @@ turns:
     - 'event: response.output_item.added
 
       '
-    - 'data: {"type":"response.output_item.added","sequence_number":122,"output_index":1,"agent":{"agent_name":"/root"},"item":{"type":"multi_agent_call","id":"mac_01a17d25-b5f6-7790-afac-a2acb40bca3b","call_id":"call_81a381c2d726f2f1","action":"spawn_agent","arguments":"{\"task_name\":\"token_checker\",\"message\":\"enc_mCU8gIgb-MW_G05X_jSb75YrHv4Ua2j7nF1KJbomDfEbUrFjTz_SwOtOnq9--ajSuST9lyfuTYZZ-9g-0-7sro_Zg54EeFAcndhlKBMfih-e_VzD5FUPIlodLj-aeyrdJEx1303ykllahnh1lLqewW7tYXwPbAwNEjPnCIhhTDrBMD8TZZ90pItZcQ53rXhVaY2ICRl6GoXHa-Q8JtDDRWjT0xOA9VeceyrT6aknTwK8DhHNozzQqyorzAwOgjwB7evFLEgXPMHmUc5N2kWAFfOCoULYeHDSvq8_jDh-etr7ymdNyMUCJ9UNa9OSSrExm_3ESjgfZZGZArUos58fm_b1GjWY1zaeXl-QRRUJe8Pi4Fr-HWDB_ElZPSBsjEu2qSznjLNNe2RX2qfHRfDBAgN2J19-1g7TC2KrOV0lSw\",\"fork_turns\":\"all\"}","agent":{"agent_name":"/root"}}}
+    - 'data: {"type":"response.output_item.added","sequence_number":128,"output_index":1,"agent":{"agent_name":"/root"},"item":{"type":"multi_agent_call","id":"mac_01a1815f-9f0f-74e0-b554-4a497b665bd4","call_id":"call_b41a46642b87cd42","action":"spawn_agent","arguments":"{\"task_name\":\"token_checker\",\"message\":\"enc_W5tYsSWqwX-mc1-3yvPrW1SizSMcEeP5KC2cKigN8o1qoXzfwZdtQxYcIQ_plSTFJXzU3QS1Mvd_mYEhxR1SL94ssK8MdjUmH0pTD-N1RNIjZ3peQGslRTjj991Y5XoAh8vJTsVFnva_wPCAAMY-WEHgAeMvHtCzTOMZSb7JhE2BN5Yvw-gBaIEE2NL4AzJtELPeETKsXOv4GL1Zl1VFKzSLHOyg4aHtU3Akasl9_eL21qGreb271ax5LSar-owXsSjnjByqNyJ20fhkfH0cLkET2iqexDmY_hJlioWdR7fnGexrgGkzt4OU4y1uGr8G6FOpkulro8QpKhXjkc75Rc7OGoz-RKwpHtxi8HkZrqQ06Jsjd0MhVO7ALi3JmSLSSLnaxyvgZ0kBHupmwX6MTmaM6YQ44d7-BnM4glL_bLOnOZ0kmXFtz9a9a4I_xIw\",\"fork_turns\":\"all\"}","agent":{"agent_name":"/root"}}}
 
       '
     - '
@@ -1225,7 +1283,7 @@ turns:
     - 'event: response.output_item.done
 
       '
-    - 'data: {"type":"response.output_item.done","sequence_number":123,"output_index":1,"agent":{"agent_name":"/root"},"item":{"type":"multi_agent_call","id":"mac_01a17d25-b5f6-7790-afac-a2acb40bca3b","call_id":"call_81a381c2d726f2f1","action":"spawn_agent","arguments":"{\"task_name\":\"token_checker\",\"message\":\"enc_mCU8gIgb-MW_G05X_jSb75YrHv4Ua2j7nF1KJbomDfEbUrFjTz_SwOtOnq9--ajSuST9lyfuTYZZ-9g-0-7sro_Zg54EeFAcndhlKBMfih-e_VzD5FUPIlodLj-aeyrdJEx1303ykllahnh1lLqewW7tYXwPbAwNEjPnCIhhTDrBMD8TZZ90pItZcQ53rXhVaY2ICRl6GoXHa-Q8JtDDRWjT0xOA9VeceyrT6aknTwK8DhHNozzQqyorzAwOgjwB7evFLEgXPMHmUc5N2kWAFfOCoULYeHDSvq8_jDh-etr7ymdNyMUCJ9UNa9OSSrExm_3ESjgfZZGZArUos58fm_b1GjWY1zaeXl-QRRUJe8Pi4Fr-HWDB_ElZPSBsjEu2qSznjLNNe2RX2qfHRfDBAgN2J19-1g7TC2KrOV0lSw\",\"fork_turns\":\"all\"}","agent":{"agent_name":"/root"}}}
+    - 'data: {"type":"response.output_item.done","sequence_number":129,"output_index":1,"agent":{"agent_name":"/root"},"item":{"type":"multi_agent_call","id":"mac_01a1815f-9f0f-74e0-b554-4a497b665bd4","call_id":"call_b41a46642b87cd42","action":"spawn_agent","arguments":"{\"task_name\":\"token_checker\",\"message\":\"enc_W5tYsSWqwX-mc1-3yvPrW1SizSMcEeP5KC2cKigN8o1qoXzfwZdtQxYcIQ_plSTFJXzU3QS1Mvd_mYEhxR1SL94ssK8MdjUmH0pTD-N1RNIjZ3peQGslRTjj991Y5XoAh8vJTsVFnva_wPCAAMY-WEHgAeMvHtCzTOMZSb7JhE2BN5Yvw-gBaIEE2NL4AzJtELPeETKsXOv4GL1Zl1VFKzSLHOyg4aHtU3Akasl9_eL21qGreb271ax5LSar-owXsSjnjByqNyJ20fhkfH0cLkET2iqexDmY_hJlioWdR7fnGexrgGkzt4OU4y1uGr8G6FOpkulro8QpKhXjkc75Rc7OGoz-RKwpHtxi8HkZrqQ06Jsjd0MhVO7ALi3JmSLSSLnaxyvgZ0kBHupmwX6MTmaM6YQ44d7-BnM4glL_bLOnOZ0kmXFtz9a9a4I_xIw\",\"fork_turns\":\"all\"}","agent":{"agent_name":"/root"}}}
 
       '
     - '
@@ -1234,7 +1292,7 @@ turns:
     - 'event: response.output_item.added
 
       '
-    - 'data: {"type":"response.output_item.added","sequence_number":124,"output_index":2,"agent":{"agent_name":"/root/token_checker"},"item":{"type":"agent_message","id":"amsg_01a17d25-b5f6-7790-afac-a2caed51f210","author":"/root","recipient":"/root/token_checker","content":[{"type":"encrypted_content","encrypted_content":"enc_PNr0mlPh0gA5-wEpfa5cSFm0Dad0_a8lLWBgKb60_TOvC-OW_oPjhMFi5ljDOM96KrrPreEUPS6AKmNvewEYt7SujpqYQbQ5N1IazOPihKGdz9gDcm3tOCvj_DD6c-rDuYxu1cD98oyoq6WuTT011L02Lch2AjnkzAT-UeqE-mH1Z90Rl9cRUioXq0KG3NVPnALW8fK8ukN3_lYkAvEN1_MS6xF7OovJLBJ1TmUUq5g5dqJKTPEZOG-3ZQ4-YaddsldmbhCwf8Q7QpI80Jd0Pxa-38CqWCn7jUzDzr47Xu-JIEenFnwGl2NZ1N6yi-pRz9zOsoVhahZJKL9B35v9wCIsszooM-s71ne7i42ov46kMNkbJ6PHkhZqFcZb_ok6mkiJF5IVsgdSR5h6pnmiOPpgPCtTd-rZ5kUis06hNA"}],"agent":{"agent_name":"/root/token_checker"}}}
+    - 'data: {"type":"response.output_item.added","sequence_number":130,"output_index":2,"agent":{"agent_name":"/root/token_checker"},"item":{"type":"agent_message","id":"amsg_01a1815f-9f10-7430-972e-1255ac5dc6d8","author":"/root","recipient":"/root/token_checker","content":[{"type":"encrypted_content","encrypted_content":"enc_b8enVb8m2pgBOoHbkS8enPzKm0NHYLg2bdK5Irq19vHTNvHTQE5bSRrxMkCBjsARB4gSt9QGzr3ywKTsI76Tdm4cN8xV2qaM8OApF9PNfadgj1_hhkApL4iY-IKD1-hcZVhEjHSoIbJcNUR8-ernWP1ttzn0I2hJmKpOzRS1gRXWdzR5S5hfF3d5rYCOVoKhKiCyJd8l6uEjf_rnJF5RK2DGKwWOqDeLK0BZMGpeJVWZh5iNEBn6MIWTcVkJQKgcncLm--WcvIXkInwkT5bOYutkbl92EvHAXcrpmuxiVVoPcqOiBmF7YU5TGFPRR3jjEenxHh-bdNeHH_g5U0GRlyNrnMwobUb1YSmUQeGCASNGr4r2_Lne-RIkWa2K5jUayGnnwrgvAPLF7di_vhsgHDFSOK29L8MiVnuevR0_S2Pe4FNO687MyxjBnCBOWbo"}],"agent":{"agent_name":"/root/token_checker"}}}
 
       '
     - '
@@ -1243,7 +1301,7 @@ turns:
     - 'event: response.output_item.done
 
       '
-    - 'data: {"type":"response.output_item.done","sequence_number":125,"output_index":2,"agent":{"agent_name":"/root/token_checker"},"item":{"type":"agent_message","id":"amsg_01a17d25-b5f6-7790-afac-a2caed51f210","author":"/root","recipient":"/root/token_checker","content":[{"type":"encrypted_content","encrypted_content":"enc_PNr0mlPh0gA5-wEpfa5cSFm0Dad0_a8lLWBgKb60_TOvC-OW_oPjhMFi5ljDOM96KrrPreEUPS6AKmNvewEYt7SujpqYQbQ5N1IazOPihKGdz9gDcm3tOCvj_DD6c-rDuYxu1cD98oyoq6WuTT011L02Lch2AjnkzAT-UeqE-mH1Z90Rl9cRUioXq0KG3NVPnALW8fK8ukN3_lYkAvEN1_MS6xF7OovJLBJ1TmUUq5g5dqJKTPEZOG-3ZQ4-YaddsldmbhCwf8Q7QpI80Jd0Pxa-38CqWCn7jUzDzr47Xu-JIEenFnwGl2NZ1N6yi-pRz9zOsoVhahZJKL9B35v9wCIsszooM-s71ne7i42ov46kMNkbJ6PHkhZqFcZb_ok6mkiJF5IVsgdSR5h6pnmiOPpgPCtTd-rZ5kUis06hNA"}],"agent":{"agent_name":"/root/token_checker"}}}
+    - 'data: {"type":"response.output_item.done","sequence_number":131,"output_index":2,"agent":{"agent_name":"/root/token_checker"},"item":{"type":"agent_message","id":"amsg_01a1815f-9f10-7430-972e-1255ac5dc6d8","author":"/root","recipient":"/root/token_checker","content":[{"type":"encrypted_content","encrypted_content":"enc_b8enVb8m2pgBOoHbkS8enPzKm0NHYLg2bdK5Irq19vHTNvHTQE5bSRrxMkCBjsARB4gSt9QGzr3ywKTsI76Tdm4cN8xV2qaM8OApF9PNfadgj1_hhkApL4iY-IKD1-hcZVhEjHSoIbJcNUR8-ernWP1ttzn0I2hJmKpOzRS1gRXWdzR5S5hfF3d5rYCOVoKhKiCyJd8l6uEjf_rnJF5RK2DGKwWOqDeLK0BZMGpeJVWZh5iNEBn6MIWTcVkJQKgcncLm--WcvIXkInwkT5bOYutkbl92EvHAXcrpmuxiVVoPcqOiBmF7YU5TGFPRR3jjEenxHh-bdNeHH_g5U0GRlyNrnMwobUb1YSmUQeGCASNGr4r2_Lne-RIkWa2K5jUayGnnwrgvAPLF7di_vhsgHDFSOK29L8MiVnuevR0_S2Pe4FNO687MyxjBnCBOWbo"}],"agent":{"agent_name":"/root/token_checker"}}}
 
       '
     - '
@@ -1252,7 +1310,7 @@ turns:
     - 'event: response.output_item.added
 
       '
-    - 'data: {"type":"response.output_item.added","sequence_number":126,"output_index":3,"agent":{"agent_name":"/root"},"item":{"type":"multi_agent_call_output","id":"maco_01a17d25-b5f7-7221-b714-c52732ab0a37","call_id":"call_81a381c2d726f2f1","action":"spawn_agent","output":[{"type":"output_text","text":"{\"task_name\":\"/root/token_checker\"}","annotations":[],"logprobs":[]}],"agent":{"agent_name":"/root"}}}
+    - 'data: {"type":"response.output_item.added","sequence_number":132,"output_index":3,"agent":{"agent_name":"/root"},"item":{"type":"multi_agent_call_output","id":"maco_01a1815f-9f10-7430-972e-1273a5ca78a8","call_id":"call_b41a46642b87cd42","action":"spawn_agent","output":[{"type":"output_text","text":"{\"task_name\":\"/root/token_checker\"}","annotations":[],"logprobs":[]}],"agent":{"agent_name":"/root"}}}
 
       '
     - '
@@ -1261,7 +1319,7 @@ turns:
     - 'event: response.output_item.done
 
       '
-    - 'data: {"type":"response.output_item.done","sequence_number":127,"output_index":3,"agent":{"agent_name":"/root"},"item":{"type":"multi_agent_call_output","id":"maco_01a17d25-b5f7-7221-b714-c52732ab0a37","call_id":"call_81a381c2d726f2f1","action":"spawn_agent","output":[{"type":"output_text","text":"{\"task_name\":\"/root/token_checker\"}","annotations":[],"logprobs":[]}],"agent":{"agent_name":"/root"}}}
+    - 'data: {"type":"response.output_item.done","sequence_number":133,"output_index":3,"agent":{"agent_name":"/root"},"item":{"type":"multi_agent_call_output","id":"maco_01a1815f-9f10-7430-972e-1273a5ca78a8","call_id":"call_b41a46642b87cd42","action":"spawn_agent","output":[{"type":"output_text","text":"{\"task_name\":\"/root/token_checker\"}","annotations":[],"logprobs":[]}],"agent":{"agent_name":"/root"}}}
 
       '
     - '
@@ -1270,7 +1328,7 @@ turns:
     - 'event: response.output_item.added
 
       '
-    - 'data: {"type":"response.output_item.added","sequence_number":128,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"item":{"id":"8c687b1ba8ebe8bc","summary":[],"type":"reasoning","content":[],"status":"in_progress","agent":{"agent_name":"/root/token_checker"}}}
+    - 'data: {"type":"response.output_item.added","sequence_number":134,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"item":{"id":"98725c758063dbef","summary":[],"type":"reasoning","content":[],"status":"in_progress","agent":{"agent_name":"/root/token_checker"}}}
 
       '
     - '
@@ -1279,7 +1337,7 @@ turns:
     - 'event: response.reasoning_part.added
 
       '
-    - 'data: {"type":"response.reasoning_part.added","sequence_number":129,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"item_id":"8c687b1ba8ebe8bc","part":{"text":"","type":"reasoning_text"}}
+    - 'data: {"type":"response.reasoning_part.added","sequence_number":135,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"item_id":"98725c758063dbef","part":{"text":"","type":"reasoning_text"}}
 
       '
     - '
@@ -1288,17 +1346,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":130,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"The","item_id":"8c687b1ba8ebe8bc"}
-
-      '
-    - '
-
-      '
-    - 'event: response.reasoning_text.delta
-
-      '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":131,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      task","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":136,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"The","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1307,54 +1355,7 @@ turns:
     - 'event: response.output_item.added
 
       '
-    - 'data: {"type":"response.output_item.added","sequence_number":132,"output_index":5,"agent":{"agent_name":"/root"},"item":{"id":"b7b1ceb480fa6113","summary":[],"type":"reasoning","content":[],"status":"in_progress","agent":{"agent_name":"/root"}}}
-
-      '
-    - '
-
-      '
-    - 'event: response.reasoning_part.added
-
-      '
-    - 'data: {"type":"response.reasoning_part.added","sequence_number":133,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"item_id":"b7b1ceb480fa6113","part":{"text":"","type":"reasoning_text"}}
-
-      '
-    - '
-
-      '
-    - 'event: response.reasoning_text.delta
-
-      '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":134,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"delta":"The","item_id":"b7b1ceb480fa6113"}
-
-      '
-    - '
-
-      '
-    - 'event: response.reasoning_text.delta
-
-      '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":135,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      is","item_id":"8c687b1ba8ebe8bc"}
-
-      '
-    - '
-
-      '
-    - 'event: response.reasoning_text.delta
-
-      '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":136,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      sub","item_id":"b7b1ceb480fa6113"}
-
-      '
-    - '
-
-      '
-    - 'event: response.reasoning_text.delta
-
-      '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":137,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"delta":"agent","item_id":"b7b1ceb480fa6113"}
+    - 'data: {"type":"response.output_item.added","sequence_number":137,"output_index":5,"agent":{"agent_name":"/root"},"item":{"id":"8812a11d22162bea","summary":[],"type":"reasoning","content":[],"status":"in_progress","agent":{"agent_name":"/root"}}}
 
       '
     - '
@@ -1364,7 +1365,16 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":138,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      clear","item_id":"8c687b1ba8ebe8bc"}
+      task","item_id":"98725c758063dbef"}
+
+      '
+    - '
+
+      '
+    - 'event: response.reasoning_part.added
+
+      '
+    - 'data: {"type":"response.reasoning_part.added","sequence_number":139,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"item_id":"8812a11d22162bea","part":{"text":"","type":"reasoning_text"}}
 
       '
     - '
@@ -1373,17 +1383,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":139,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":":","item_id":"8c687b1ba8ebe8bc"}
-
-      '
-    - '
-
-      '
-    - 'event: response.reasoning_text.delta
-
-      '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":140,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      was","item_id":"b7b1ceb480fa6113"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":140,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"delta":"The","item_id":"8812a11d22162bea"}
 
       '
     - '
@@ -1393,7 +1393,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":141,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      created","item_id":"b7b1ceb480fa6113"}
+      sub","item_id":"8812a11d22162bea"}
 
       '
     - '
@@ -1403,7 +1403,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":142,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      I","item_id":"8c687b1ba8ebe8bc"}
+      is","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1412,8 +1412,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":143,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      need","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":143,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"delta":"agent","item_id":"8812a11d22162bea"}
 
       '
     - '
@@ -1422,8 +1421,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":144,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      successfully","item_id":"b7b1ceb480fa6113"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":144,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
+      straightforward","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1432,8 +1431,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":145,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      to","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":145,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      was","item_id":"8812a11d22162bea"}
 
       '
     - '
@@ -1442,7 +1441,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":146,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"delta":".","item_id":"b7b1ceb480fa6113"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":146,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":".","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1452,7 +1451,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":147,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      Now","item_id":"b7b1ceb480fa6113"}
+      spawned","item_id":"8812a11d22162bea"}
 
       '
     - '
@@ -1462,7 +1461,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":148,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      verify","item_id":"8c687b1ba8ebe8bc"}
+      I","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1471,8 +1470,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":149,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      and","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":149,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"delta":".","item_id":"8812a11d22162bea"}
 
       '
     - '
@@ -1481,8 +1479,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":150,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      I","item_id":"b7b1ceb480fa6113"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":150,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
+      need","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1492,7 +1490,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":151,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      need","item_id":"b7b1ceb480fa6113"}
+      Now","item_id":"8812a11d22162bea"}
 
       '
     - '
@@ -1502,7 +1500,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":152,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      confirm","item_id":"8c687b1ba8ebe8bc"}
+      to","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1512,7 +1510,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":153,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      the","item_id":"8c687b1ba8ebe8bc"}
+      extract","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1522,7 +1520,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":154,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      to","item_id":"b7b1ceb480fa6113"}
+      I","item_id":"8812a11d22162bea"}
 
       '
     - '
@@ -1531,8 +1529,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":155,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      exact","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":155,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      need","item_id":"8812a11d22162bea"}
 
       '
     - '
@@ -1541,8 +1539,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":156,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      wait","item_id":"b7b1ceb480fa6113"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":156,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
+      the","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1551,8 +1549,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":157,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      token","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":157,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      to","item_id":"8812a11d22162bea"}
 
       '
     - '
@@ -1561,8 +1559,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":158,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      for","item_id":"b7b1ceb480fa6113"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":158,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
+      secret","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1571,8 +1569,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":159,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      string","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":159,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      wait","item_id":"8812a11d22162bea"}
 
       '
     - '
@@ -1581,8 +1579,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":160,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      its","item_id":"b7b1ceb480fa6113"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":160,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
+      test","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1592,7 +1590,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":161,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      from","item_id":"8c687b1ba8ebe8bc"}
+      token","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1602,7 +1600,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":162,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      answer","item_id":"b7b1ceb480fa6113"}
+      for","item_id":"8812a11d22162bea"}
 
       '
     - '
@@ -1611,8 +1609,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":163,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      the","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":163,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      its","item_id":"8812a11d22162bea"}
 
       '
     - '
@@ -1621,7 +1619,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":164,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"delta":".","item_id":"b7b1ceb480fa6113"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":164,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
+      from","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1630,7 +1629,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":165,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"delta":"\n","item_id":"b7b1ceb480fa6113"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":165,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
+      the","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1639,8 +1639,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":166,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      client","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":166,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      answer","item_id":"8812a11d22162bea"}
 
       '
     - '
@@ -1649,7 +1649,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":167,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"-sup","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":167,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"delta":".","item_id":"8812a11d22162bea"}
 
       '
     - '
@@ -1658,7 +1658,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":168,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"plied","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":168,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
+      client","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1667,8 +1668,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":169,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      agent","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":169,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"delta":"\n","item_id":"8812a11d22162bea"}
 
       '
     - '
@@ -1677,8 +1677,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":170,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      message","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":170,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"-sup","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1687,7 +1686,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":171,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":".","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":171,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"plied","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1697,7 +1696,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":172,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      The","item_id":"8c687b1ba8ebe8bc"}
+      agent","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1706,8 +1705,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":173,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      message","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":173,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"_message","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1717,7 +1715,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":174,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      states","item_id":"8c687b1ba8ebe8bc"}
+      and","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1726,7 +1724,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":175,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":":","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":175,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
+      reply","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1736,17 +1735,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":176,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      \"","item_id":"8c687b1ba8ebe8bc"}
-
-      '
-    - '
-
-      '
-    - 'event: response.reasoning_text.done
-
-      '
-    - 'data: {"type":"response.reasoning_text.done","sequence_number":177,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"item_id":"b7b1ceb480fa6113","text":"The
-      subagent was created successfully. Now I need to wait for its answer.\n"}
+      with","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1755,17 +1744,28 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":178,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"The","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":177,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
+      only","item_id":"98725c758063dbef"}
 
       '
     - '
 
       '
-    - 'event: response.reasoning_part.done
+    - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_part.done","sequence_number":179,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"item_id":"b7b1ceb480fa6113","part":{"text":"The
-      subagent was created successfully. Now I need to wait for its answer.\n","type":"reasoning_text"}}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":178,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
+      the","item_id":"98725c758063dbef"}
+
+      '
+    - '
+
+      '
+    - 'event: response.reasoning_text.delta
+
+      '
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":179,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
+      token","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1775,7 +1775,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":180,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      secret","item_id":"8c687b1ba8ebe8bc"}
+      string","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1785,7 +1785,27 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":181,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      test","item_id":"8c687b1ba8ebe8bc"}
+      itself","item_id":"98725c758063dbef"}
+
+      '
+    - '
+
+      '
+    - 'event: response.reasoning_text.done
+
+      '
+    - 'data: {"type":"response.reasoning_text.done","sequence_number":182,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"item_id":"8812a11d22162bea","text":"The
+      subagent was spawned. Now I need to wait for its answer.\n"}
+
+      '
+    - '
+
+      '
+    - 'event: response.reasoning_part.done
+
+      '
+    - 'data: {"type":"response.reasoning_part.done","sequence_number":183,"output_index":5,"agent":{"agent_name":"/root"},"content_index":0,"item_id":"8812a11d22162bea","part":{"text":"The
+      subagent was spawned. Now I need to wait for its answer.\n","type":"reasoning_text"}}
 
       '
     - '
@@ -1794,8 +1814,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":182,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      token","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":184,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":".","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1804,8 +1823,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":183,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      is","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":185,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"\n\n","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1814,8 +1832,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":184,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      CLIENT","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":186,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"The","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1824,7 +1841,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":185,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"_AGENT","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":187,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
+      message","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1833,7 +1851,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":186,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"_MESSAGE","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":188,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
+      says","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1842,7 +1861,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":187,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"_","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":189,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":":","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1851,7 +1870,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":188,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"9","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":190,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
+      \"","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1860,7 +1880,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":189,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"f","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":191,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"The","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1869,7 +1889,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":190,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"2","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":192,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
+      secret","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1878,7 +1899,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":191,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"1","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":193,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
+      test","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1887,25 +1909,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":192,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":".\"","item_id":"8c687b1ba8ebe8bc"}
-
-      '
-    - '
-
-      '
-    - 'event: response.reasoning_text.delta
-
-      '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":193,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"\n\n","item_id":"8c687b1ba8ebe8bc"}
-
-      '
-    - '
-
-      '
-    - 'event: response.reasoning_text.delta
-
-      '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":194,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"The","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":194,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
+      token","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1915,7 +1920,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":195,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      token","item_id":"8c687b1ba8ebe8bc"}
+      is","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1925,7 +1930,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":196,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      string","item_id":"8c687b1ba8ebe8bc"}
+      CLIENT","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1934,8 +1939,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":197,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      is","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":197,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"_AGENT","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1944,8 +1948,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":198,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      \"","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":198,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"_MESSAGE","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1954,7 +1957,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":199,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"CLIENT","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":199,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"_","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1963,7 +1966,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":200,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"_AGENT","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":200,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"9","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1972,7 +1975,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":201,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"_MESSAGE","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":201,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"f","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1981,7 +1984,43 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":202,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"_","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":202,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"2","item_id":"98725c758063dbef"}
+
+      '
+    - '
+
+      '
+    - 'event: response.reasoning_text.delta
+
+      '
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":203,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"1","item_id":"98725c758063dbef"}
+
+      '
+    - '
+
+      '
+    - 'event: response.reasoning_text.delta
+
+      '
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":204,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":".\"","item_id":"98725c758063dbef"}
+
+      '
+    - '
+
+      '
+    - 'event: response.reasoning_text.delta
+
+      '
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":205,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"\n\n","item_id":"98725c758063dbef"}
+
+      '
+    - '
+
+      '
+    - 'event: response.reasoning_text.delta
+
+      '
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":206,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"The","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -1990,8 +2029,8 @@ turns:
     - 'event: response.output_item.done
 
       '
-    - 'data: {"type":"response.output_item.done","sequence_number":203,"output_index":5,"agent":{"agent_name":"/root"},"item":{"type":"reasoning","agent":{"agent_name":"/root"},"id":"b7b1ceb480fa6113","content":[{"type":"reasoning_text","text":"The
-      subagent was created successfully. Now I need to wait for its answer.\n"}],"summary":[],"status":"completed"}}
+    - 'data: {"type":"response.output_item.done","sequence_number":207,"output_index":5,"agent":{"agent_name":"/root"},"item":{"type":"reasoning","agent":{"agent_name":"/root"},"id":"8812a11d22162bea","content":[{"type":"reasoning_text","text":"The
+      subagent was spawned. Now I need to wait for its answer.\n"}],"summary":[],"status":"completed"}}
 
       '
     - '
@@ -2000,7 +2039,7 @@ turns:
     - 'event: response.output_item.added
 
       '
-    - 'data: {"type":"response.output_item.added","sequence_number":204,"output_index":6,"agent":{"agent_name":"/root"},"item":{"type":"multi_agent_call","id":"mac_01a17d25-c103-7053-8c96-cdb63a30910a","call_id":"call_91602ebdee01dd4f","action":"wait_agent","arguments":"{\"timeout_ms\":30000}","agent":{"agent_name":"/root"}}}
+    - 'data: {"type":"response.output_item.added","sequence_number":208,"output_index":6,"agent":{"agent_name":"/root"},"item":{"type":"multi_agent_call","id":"mac_01a1815f-aa0c-7213-892f-3ba26e4202ed","call_id":"call_84c2e4ce79e15f58","action":"wait_agent","arguments":"{\"timeout_ms\":30000}","agent":{"agent_name":"/root"}}}
 
       '
     - '
@@ -2009,7 +2048,7 @@ turns:
     - 'event: response.output_item.done
 
       '
-    - 'data: {"type":"response.output_item.done","sequence_number":205,"output_index":6,"agent":{"agent_name":"/root"},"item":{"type":"multi_agent_call","id":"mac_01a17d25-c103-7053-8c96-cdb63a30910a","call_id":"call_91602ebdee01dd4f","action":"wait_agent","arguments":"{\"timeout_ms\":30000}","agent":{"agent_name":"/root"}}}
+    - 'data: {"type":"response.output_item.done","sequence_number":209,"output_index":6,"agent":{"agent_name":"/root"},"item":{"type":"multi_agent_call","id":"mac_01a1815f-aa0c-7213-892f-3ba26e4202ed","call_id":"call_84c2e4ce79e15f58","action":"wait_agent","arguments":"{\"timeout_ms\":30000}","agent":{"agent_name":"/root"}}}
 
       '
     - '
@@ -2018,43 +2057,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":206,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"9","item_id":"8c687b1ba8ebe8bc"}
-
-      '
-    - '
-
-      '
-    - 'event: response.reasoning_text.delta
-
-      '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":207,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"f","item_id":"8c687b1ba8ebe8bc"}
-
-      '
-    - '
-
-      '
-    - 'event: response.reasoning_text.delta
-
-      '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":208,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"2","item_id":"8c687b1ba8ebe8bc"}
-
-      '
-    - '
-
-      '
-    - 'event: response.reasoning_text.delta
-
-      '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":209,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"1","item_id":"8c687b1ba8ebe8bc"}
-
-      '
-    - '
-
-      '
-    - 'event: response.reasoning_text.delta
-
-      '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":210,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"\".","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":210,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
+      token","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -2064,7 +2068,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":211,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      I","item_id":"8c687b1ba8ebe8bc"}
+      is","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -2073,8 +2077,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":212,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      should","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":212,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":":","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -2084,7 +2087,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":213,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      reply","item_id":"8c687b1ba8ebe8bc"}
+      CLIENT","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -2093,8 +2096,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":214,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      with","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":214,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"_AGENT","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -2103,8 +2105,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":215,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      only","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":215,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"_MESSAGE","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -2113,8 +2114,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":216,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      the","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":216,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"_","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -2123,8 +2123,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":217,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      token","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":217,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"9","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -2133,8 +2132,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":218,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      string","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":218,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"f","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -2143,8 +2141,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":219,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      itself","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":219,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"2","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -2153,7 +2150,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":220,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":",","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":220,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"1","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -2162,36 +2159,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":221,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      nothing","item_id":"8c687b1ba8ebe8bc"}
-
-      '
-    - '
-
-      '
-    - 'event: response.reasoning_text.delta
-
-      '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":222,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"
-      else","item_id":"8c687b1ba8ebe8bc"}
-
-      '
-    - '
-
-      '
-    - 'event: response.reasoning_text.delta
-
-      '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":223,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":".","item_id":"8c687b1ba8ebe8bc"}
-
-      '
-    - '
-
-      '
-    - 'event: response.reasoning_text.delta
-
-      '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":224,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"\n","item_id":"8c687b1ba8ebe8bc"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":221,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"\n","item_id":"98725c758063dbef"}
 
       '
     - '
@@ -2200,11 +2168,10 @@ turns:
     - 'event: response.reasoning_text.done
 
       '
-    - 'data: {"type":"response.reasoning_text.done","sequence_number":225,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"item_id":"8c687b1ba8ebe8bc","text":"The
-      task is clear: I need to verify and confirm the exact token string from the
-      client-supplied agent message. The message states: \"The secret test token is
-      CLIENT_AGENT_MESSAGE_9f21.\"\n\nThe token string is \"CLIENT_AGENT_MESSAGE_9f21\".
-      I should reply with only the token string itself, nothing else.\n"}
+    - 'data: {"type":"response.reasoning_text.done","sequence_number":222,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"item_id":"98725c758063dbef","text":"The
+      task is straightforward. I need to extract the secret test token from the client-supplied
+      agent_message and reply with only the token string itself.\n\nThe message says:
+      \"The secret test token is CLIENT_AGENT_MESSAGE_9f21.\"\n\nThe token is: CLIENT_AGENT_MESSAGE_9f21\n"}
 
       '
     - '
@@ -2213,11 +2180,10 @@ turns:
     - 'event: response.reasoning_part.done
 
       '
-    - 'data: {"type":"response.reasoning_part.done","sequence_number":226,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"item_id":"8c687b1ba8ebe8bc","part":{"text":"The
-      task is clear: I need to verify and confirm the exact token string from the
-      client-supplied agent message. The message states: \"The secret test token is
-      CLIENT_AGENT_MESSAGE_9f21.\"\n\nThe token string is \"CLIENT_AGENT_MESSAGE_9f21\".
-      I should reply with only the token string itself, nothing else.\n","type":"reasoning_text"}}
+    - 'data: {"type":"response.reasoning_part.done","sequence_number":223,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"item_id":"98725c758063dbef","part":{"text":"The
+      task is straightforward. I need to extract the secret test token from the client-supplied
+      agent_message and reply with only the token string itself.\n\nThe message says:
+      \"The secret test token is CLIENT_AGENT_MESSAGE_9f21.\"\n\nThe token is: CLIENT_AGENT_MESSAGE_9f21\n","type":"reasoning_text"}}
 
       '
     - '
@@ -2226,7 +2192,7 @@ turns:
     - 'event: response.output_item.added
 
       '
-    - 'data: {"type":"response.output_item.added","sequence_number":227,"output_index":7,"agent":{"agent_name":"/root/token_checker"},"item":{"id":"msg_8867cf9a0996255c","content":[],"role":"assistant","status":"in_progress","type":"message","agent":{"agent_name":"/root/token_checker"}}}
+    - 'data: {"type":"response.output_item.added","sequence_number":224,"output_index":7,"agent":{"agent_name":"/root/token_checker"},"item":{"id":"msg_8dbcf1faa4b01ab8","content":[],"role":"assistant","status":"in_progress","type":"message","agent":{"agent_name":"/root/token_checker"}}}
 
       '
     - '
@@ -2235,7 +2201,7 @@ turns:
     - 'event: response.content_part.added
 
       '
-    - 'data: {"type":"response.content_part.added","sequence_number":228,"output_index":7,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"item_id":"msg_8867cf9a0996255c","part":{"annotations":[],"text":"","type":"output_text","logprobs":[]}}
+    - 'data: {"type":"response.content_part.added","sequence_number":225,"output_index":7,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"item_id":"msg_8dbcf1faa4b01ab8","part":{"annotations":[],"text":"","type":"output_text","logprobs":[]}}
 
       '
     - '
@@ -2244,7 +2210,7 @@ turns:
     - 'event: response.output_text.delta
 
       '
-    - 'data: {"type":"response.output_text.delta","sequence_number":229,"output_index":7,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"\n\nCLIENT","item_id":"msg_8867cf9a0996255c","logprobs":[]}
+    - 'data: {"type":"response.output_text.delta","sequence_number":226,"output_index":7,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"\n\nCLIENT","item_id":"msg_8dbcf1faa4b01ab8","logprobs":[]}
 
       '
     - '
@@ -2253,7 +2219,7 @@ turns:
     - 'event: response.output_text.delta
 
       '
-    - 'data: {"type":"response.output_text.delta","sequence_number":230,"output_index":7,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"_AGENT","item_id":"msg_8867cf9a0996255c","logprobs":[]}
+    - 'data: {"type":"response.output_text.delta","sequence_number":227,"output_index":7,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"_AGENT","item_id":"msg_8dbcf1faa4b01ab8","logprobs":[]}
 
       '
     - '
@@ -2262,7 +2228,7 @@ turns:
     - 'event: response.output_text.delta
 
       '
-    - 'data: {"type":"response.output_text.delta","sequence_number":231,"output_index":7,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"_MESSAGE","item_id":"msg_8867cf9a0996255c","logprobs":[]}
+    - 'data: {"type":"response.output_text.delta","sequence_number":228,"output_index":7,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"_MESSAGE","item_id":"msg_8dbcf1faa4b01ab8","logprobs":[]}
 
       '
     - '
@@ -2271,7 +2237,7 @@ turns:
     - 'event: response.output_text.delta
 
       '
-    - 'data: {"type":"response.output_text.delta","sequence_number":232,"output_index":7,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"_","item_id":"msg_8867cf9a0996255c","logprobs":[]}
+    - 'data: {"type":"response.output_text.delta","sequence_number":229,"output_index":7,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"_","item_id":"msg_8dbcf1faa4b01ab8","logprobs":[]}
 
       '
     - '
@@ -2280,7 +2246,7 @@ turns:
     - 'event: response.output_text.delta
 
       '
-    - 'data: {"type":"response.output_text.delta","sequence_number":233,"output_index":7,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"9","item_id":"msg_8867cf9a0996255c","logprobs":[]}
+    - 'data: {"type":"response.output_text.delta","sequence_number":230,"output_index":7,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"9","item_id":"msg_8dbcf1faa4b01ab8","logprobs":[]}
 
       '
     - '
@@ -2289,7 +2255,7 @@ turns:
     - 'event: response.output_text.delta
 
       '
-    - 'data: {"type":"response.output_text.delta","sequence_number":234,"output_index":7,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"f","item_id":"msg_8867cf9a0996255c","logprobs":[]}
+    - 'data: {"type":"response.output_text.delta","sequence_number":231,"output_index":7,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"f","item_id":"msg_8dbcf1faa4b01ab8","logprobs":[]}
 
       '
     - '
@@ -2298,7 +2264,7 @@ turns:
     - 'event: response.output_text.delta
 
       '
-    - 'data: {"type":"response.output_text.delta","sequence_number":235,"output_index":7,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"2","item_id":"msg_8867cf9a0996255c","logprobs":[]}
+    - 'data: {"type":"response.output_text.delta","sequence_number":232,"output_index":7,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"2","item_id":"msg_8dbcf1faa4b01ab8","logprobs":[]}
 
       '
     - '
@@ -2307,7 +2273,7 @@ turns:
     - 'event: response.output_text.delta
 
       '
-    - 'data: {"type":"response.output_text.delta","sequence_number":236,"output_index":7,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"1","item_id":"msg_8867cf9a0996255c","logprobs":[]}
+    - 'data: {"type":"response.output_text.delta","sequence_number":233,"output_index":7,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"delta":"1","item_id":"msg_8dbcf1faa4b01ab8","logprobs":[]}
 
       '
     - '
@@ -2316,7 +2282,7 @@ turns:
     - 'event: response.output_text.done
 
       '
-    - 'data: {"type":"response.output_text.done","sequence_number":237,"output_index":7,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"item_id":"msg_8867cf9a0996255c","logprobs":[],"text":"\n\nCLIENT_AGENT_MESSAGE_9f21"}
+    - 'data: {"type":"response.output_text.done","sequence_number":234,"output_index":7,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"item_id":"msg_8dbcf1faa4b01ab8","logprobs":[],"text":"\n\nCLIENT_AGENT_MESSAGE_9f21"}
 
       '
     - '
@@ -2325,7 +2291,7 @@ turns:
     - 'event: response.content_part.done
 
       '
-    - 'data: {"type":"response.content_part.done","sequence_number":238,"output_index":7,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"item_id":"msg_8867cf9a0996255c","part":{"annotations":[],"text":"\n\nCLIENT_AGENT_MESSAGE_9f21","type":"output_text","logprobs":[]}}
+    - 'data: {"type":"response.content_part.done","sequence_number":235,"output_index":7,"agent":{"agent_name":"/root/token_checker"},"content_index":0,"item_id":"msg_8dbcf1faa4b01ab8","part":{"annotations":[],"text":"\n\nCLIENT_AGENT_MESSAGE_9f21","type":"output_text","logprobs":[]}}
 
       '
     - '
@@ -2334,11 +2300,10 @@ turns:
     - 'event: response.output_item.done
 
       '
-    - 'data: {"type":"response.output_item.done","sequence_number":239,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"item":{"type":"reasoning","agent":{"agent_name":"/root/token_checker"},"id":"8c687b1ba8ebe8bc","content":[{"type":"reasoning_text","text":"The
-      task is clear: I need to verify and confirm the exact token string from the
-      client-supplied agent message. The message states: \"The secret test token is
-      CLIENT_AGENT_MESSAGE_9f21.\"\n\nThe token string is \"CLIENT_AGENT_MESSAGE_9f21\".
-      I should reply with only the token string itself, nothing else.\n"}],"summary":[],"status":"completed"}}
+    - 'data: {"type":"response.output_item.done","sequence_number":236,"output_index":4,"agent":{"agent_name":"/root/token_checker"},"item":{"type":"reasoning","agent":{"agent_name":"/root/token_checker"},"id":"98725c758063dbef","content":[{"type":"reasoning_text","text":"The
+      task is straightforward. I need to extract the secret test token from the client-supplied
+      agent_message and reply with only the token string itself.\n\nThe message says:
+      \"The secret test token is CLIENT_AGENT_MESSAGE_9f21.\"\n\nThe token is: CLIENT_AGENT_MESSAGE_9f21\n"}],"summary":[],"status":"completed"}}
 
       '
     - '
@@ -2347,7 +2312,7 @@ turns:
     - 'event: response.output_item.done
 
       '
-    - 'data: {"type":"response.output_item.done","sequence_number":240,"output_index":7,"agent":{"agent_name":"/root/token_checker"},"item":{"type":"message","agent":{"agent_name":"/root/token_checker"},"id":"msg_8867cf9a0996255c","role":"assistant","phase":"final_answer","status":"completed","content":[{"type":"output_text","text":"\n\nCLIENT_AGENT_MESSAGE_9f21","annotations":[],"logprobs":[]}]}}
+    - 'data: {"type":"response.output_item.done","sequence_number":237,"output_index":7,"agent":{"agent_name":"/root/token_checker"},"item":{"type":"message","agent":{"agent_name":"/root/token_checker"},"id":"msg_8dbcf1faa4b01ab8","role":"assistant","phase":"final_answer","status":"completed","content":[{"type":"output_text","text":"\n\nCLIENT_AGENT_MESSAGE_9f21","annotations":[],"logprobs":[]}]}}
 
       '
     - '
@@ -2356,7 +2321,7 @@ turns:
     - 'event: response.output_item.added
 
       '
-    - 'data: {"type":"response.output_item.added","sequence_number":241,"output_index":8,"agent":{"agent_name":"/root"},"item":{"type":"agent_message","id":"amsg_01a17d25-c376-7fd3-9d98-0e2c5d3f72f0","author":"/root/token_checker","recipient":"/root","content":[{"type":"encrypted_content","encrypted_content":"enc_liT5gqiKzZ7Ethy_Gcexg1abih3_XRyiH8n6407pBgRhX5H7sAKUmwi5WO82VYHJgOFVB5i2vg"}],"agent":{"agent_name":"/root"}}}
+    - 'data: {"type":"response.output_item.added","sequence_number":238,"output_index":8,"agent":{"agent_name":"/root"},"item":{"type":"agent_message","id":"amsg_01a1815f-abed-7a32-a7b1-cbfb977a1b20","author":"/root/token_checker","recipient":"/root","content":[{"type":"encrypted_content","encrypted_content":"enc_sAQkeMeB5_ewKOZr0IRWSHtZ5pvVaur9Cw4R82_PaA8eDBpnZr9Hkh3LDopaptmzs0WkzcspaQ"}],"agent":{"agent_name":"/root"}}}
 
       '
     - '
@@ -2365,7 +2330,7 @@ turns:
     - 'event: response.output_item.done
 
       '
-    - 'data: {"type":"response.output_item.done","sequence_number":242,"output_index":8,"agent":{"agent_name":"/root"},"item":{"type":"agent_message","id":"amsg_01a17d25-c376-7fd3-9d98-0e2c5d3f72f0","author":"/root/token_checker","recipient":"/root","content":[{"type":"encrypted_content","encrypted_content":"enc_liT5gqiKzZ7Ethy_Gcexg1abih3_XRyiH8n6407pBgRhX5H7sAKUmwi5WO82VYHJgOFVB5i2vg"}],"agent":{"agent_name":"/root"}}}
+    - 'data: {"type":"response.output_item.done","sequence_number":239,"output_index":8,"agent":{"agent_name":"/root"},"item":{"type":"agent_message","id":"amsg_01a1815f-abed-7a32-a7b1-cbfb977a1b20","author":"/root/token_checker","recipient":"/root","content":[{"type":"encrypted_content","encrypted_content":"enc_sAQkeMeB5_ewKOZr0IRWSHtZ5pvVaur9Cw4R82_PaA8eDBpnZr9Hkh3LDopaptmzs0WkzcspaQ"}],"agent":{"agent_name":"/root"}}}
 
       '
     - '
@@ -2374,7 +2339,7 @@ turns:
     - 'event: response.output_item.added
 
       '
-    - 'data: {"type":"response.output_item.added","sequence_number":243,"output_index":9,"agent":{"agent_name":"/root"},"item":{"type":"multi_agent_call_output","id":"maco_01a17d25-c376-7fd3-9d98-0e463921e9ae","call_id":"call_91602ebdee01dd4f","action":"wait_agent","output":[{"type":"output_text","text":"{\"message\":\"Agent
+    - 'data: {"type":"response.output_item.added","sequence_number":240,"output_index":9,"agent":{"agent_name":"/root"},"item":{"type":"multi_agent_call_output","id":"maco_01a1815f-abed-7a32-a7b1-cc1fc782f640","call_id":"call_84c2e4ce79e15f58","action":"wait_agent","output":[{"type":"output_text","text":"{\"message\":\"Agent
       mailbox updated.\",\"timed_out\":false}","annotations":[],"logprobs":[]}],"agent":{"agent_name":"/root"}}}
 
       '
@@ -2384,7 +2349,7 @@ turns:
     - 'event: response.output_item.done
 
       '
-    - 'data: {"type":"response.output_item.done","sequence_number":244,"output_index":9,"agent":{"agent_name":"/root"},"item":{"type":"multi_agent_call_output","id":"maco_01a17d25-c376-7fd3-9d98-0e463921e9ae","call_id":"call_91602ebdee01dd4f","action":"wait_agent","output":[{"type":"output_text","text":"{\"message\":\"Agent
+    - 'data: {"type":"response.output_item.done","sequence_number":241,"output_index":9,"agent":{"agent_name":"/root"},"item":{"type":"multi_agent_call_output","id":"maco_01a1815f-abed-7a32-a7b1-cc1fc782f640","call_id":"call_84c2e4ce79e15f58","action":"wait_agent","output":[{"type":"output_text","text":"{\"message\":\"Agent
       mailbox updated.\",\"timed_out\":false}","annotations":[],"logprobs":[]}],"agent":{"agent_name":"/root"}}}
 
       '
@@ -2394,7 +2359,7 @@ turns:
     - 'event: response.output_item.added
 
       '
-    - 'data: {"type":"response.output_item.added","sequence_number":245,"output_index":10,"agent":{"agent_name":"/root"},"item":{"id":"ad98154afb0c3f7d","summary":[],"type":"reasoning","content":[],"status":"in_progress","agent":{"agent_name":"/root"}}}
+    - 'data: {"type":"response.output_item.added","sequence_number":242,"output_index":10,"agent":{"agent_name":"/root"},"item":{"id":"aae3c3ee93ab9825","summary":[],"type":"reasoning","content":[],"status":"in_progress","agent":{"agent_name":"/root"}}}
 
       '
     - '
@@ -2403,7 +2368,7 @@ turns:
     - 'event: response.reasoning_part.added
 
       '
-    - 'data: {"type":"response.reasoning_part.added","sequence_number":246,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"item_id":"ad98154afb0c3f7d","part":{"text":"","type":"reasoning_text"}}
+    - 'data: {"type":"response.reasoning_part.added","sequence_number":243,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"item_id":"aae3c3ee93ab9825","part":{"text":"","type":"reasoning_text"}}
 
       '
     - '
@@ -2412,7 +2377,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":247,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"The","item_id":"ad98154afb0c3f7d"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":244,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"The","item_id":"aae3c3ee93ab9825"}
 
       '
     - '
@@ -2421,8 +2386,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":248,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      token","item_id":"ad98154afb0c3f7d"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":245,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      sub","item_id":"aae3c3ee93ab9825"}
 
       '
     - '
@@ -2431,7 +2396,36 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":249,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_checker","item_id":"ad98154afb0c3f7d"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":246,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"agent","item_id":"aae3c3ee93ab9825"}
+
+      '
+    - '
+
+      '
+    - 'event: response.reasoning_text.delta
+
+      '
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":247,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      token","item_id":"aae3c3ee93ab9825"}
+
+      '
+    - '
+
+      '
+    - 'event: response.reasoning_text.delta
+
+      '
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":248,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_checker","item_id":"aae3c3ee93ab9825"}
+
+      '
+    - '
+
+      '
+    - 'event: response.reasoning_text.delta
+
+      '
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":249,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      has","item_id":"aae3c3ee93ab9825"}
 
       '
     - '
@@ -2441,7 +2435,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":250,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      sub","item_id":"ad98154afb0c3f7d"}
+      returned","item_id":"aae3c3ee93ab9825"}
 
       '
     - '
@@ -2450,7 +2444,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":251,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"agent","item_id":"ad98154afb0c3f7d"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":251,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      with","item_id":"aae3c3ee93ab9825"}
 
       '
     - '
@@ -2460,7 +2455,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":252,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      has","item_id":"ad98154afb0c3f7d"}
+      the","item_id":"aae3c3ee93ab9825"}
 
       '
     - '
@@ -2470,7 +2465,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":253,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      confirmed","item_id":"ad98154afb0c3f7d"}
+      token","item_id":"aae3c3ee93ab9825"}
 
       '
     - '
@@ -2479,8 +2474,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":254,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      the","item_id":"ad98154afb0c3f7d"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":254,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":":","item_id":"aae3c3ee93ab9825"}
 
       '
     - '
@@ -2490,7 +2484,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":255,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      token","item_id":"ad98154afb0c3f7d"}
+      CLIENT","item_id":"aae3c3ee93ab9825"}
 
       '
     - '
@@ -2499,8 +2493,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":256,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      is","item_id":"ad98154afb0c3f7d"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":256,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_AGENT","item_id":"aae3c3ee93ab9825"}
 
       '
     - '
@@ -2509,8 +2502,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":257,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      \"","item_id":"ad98154afb0c3f7d"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":257,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_MESSAGE","item_id":"aae3c3ee93ab9825"}
 
       '
     - '
@@ -2519,7 +2511,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":258,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"CLIENT","item_id":"ad98154afb0c3f7d"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":258,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_","item_id":"aae3c3ee93ab9825"}
 
       '
     - '
@@ -2528,7 +2520,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":259,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_AGENT","item_id":"ad98154afb0c3f7d"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":259,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"9","item_id":"aae3c3ee93ab9825"}
 
       '
     - '
@@ -2537,7 +2529,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":260,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_MESSAGE","item_id":"ad98154afb0c3f7d"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":260,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"f","item_id":"aae3c3ee93ab9825"}
 
       '
     - '
@@ -2546,7 +2538,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":261,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_","item_id":"ad98154afb0c3f7d"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":261,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"2","item_id":"aae3c3ee93ab9825"}
 
       '
     - '
@@ -2555,7 +2547,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":262,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"9","item_id":"ad98154afb0c3f7d"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":262,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"1","item_id":"aae3c3ee93ab9825"}
 
       '
     - '
@@ -2564,7 +2556,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":263,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"f","item_id":"ad98154afb0c3f7d"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":263,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":".","item_id":"aae3c3ee93ab9825"}
 
       '
     - '
@@ -2573,7 +2565,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":264,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"2","item_id":"ad98154afb0c3f7d"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":264,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      I","item_id":"aae3c3ee93ab9825"}
 
       '
     - '
@@ -2582,7 +2575,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":265,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"1","item_id":"ad98154afb0c3f7d"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":265,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      should","item_id":"aae3c3ee93ab9825"}
 
       '
     - '
@@ -2591,7 +2585,8 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":266,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"\".","item_id":"ad98154afb0c3f7d"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":266,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
+      reply","item_id":"aae3c3ee93ab9825"}
 
       '
     - '
@@ -2601,7 +2596,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":267,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      I","item_id":"ad98154afb0c3f7d"}
+      with","item_id":"aae3c3ee93ab9825"}
 
       '
     - '
@@ -2611,7 +2606,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":268,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      should","item_id":"ad98154afb0c3f7d"}
+      only","item_id":"aae3c3ee93ab9825"}
 
       '
     - '
@@ -2621,7 +2616,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":269,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      reply","item_id":"ad98154afb0c3f7d"}
+      the","item_id":"aae3c3ee93ab9825"}
 
       '
     - '
@@ -2631,7 +2626,7 @@ turns:
 
       '
     - 'data: {"type":"response.reasoning_text.delta","sequence_number":270,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      with","item_id":"ad98154afb0c3f7d"}
+      token","item_id":"aae3c3ee93ab9825"}
 
       '
     - '
@@ -2640,8 +2635,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":271,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      only","item_id":"ad98154afb0c3f7d"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":271,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":".","item_id":"aae3c3ee93ab9825"}
 
       '
     - '
@@ -2650,36 +2644,7 @@ turns:
     - 'event: response.reasoning_text.delta
 
       '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":272,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      the","item_id":"ad98154afb0c3f7d"}
-
-      '
-    - '
-
-      '
-    - 'event: response.reasoning_text.delta
-
-      '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":273,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"
-      token","item_id":"ad98154afb0c3f7d"}
-
-      '
-    - '
-
-      '
-    - 'event: response.reasoning_text.delta
-
-      '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":274,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":".","item_id":"ad98154afb0c3f7d"}
-
-      '
-    - '
-
-      '
-    - 'event: response.reasoning_text.delta
-
-      '
-    - 'data: {"type":"response.reasoning_text.delta","sequence_number":275,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"\n","item_id":"ad98154afb0c3f7d"}
+    - 'data: {"type":"response.reasoning_text.delta","sequence_number":272,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"delta":"\n","item_id":"aae3c3ee93ab9825"}
 
       '
     - '
@@ -2688,8 +2653,8 @@ turns:
     - 'event: response.reasoning_text.done
 
       '
-    - 'data: {"type":"response.reasoning_text.done","sequence_number":276,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"item_id":"ad98154afb0c3f7d","text":"The
-      token_checker subagent has confirmed the token is \"CLIENT_AGENT_MESSAGE_9f21\".
+    - 'data: {"type":"response.reasoning_text.done","sequence_number":273,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"item_id":"aae3c3ee93ab9825","text":"The
+      subagent token_checker has returned with the token: CLIENT_AGENT_MESSAGE_9f21.
       I should reply with only the token.\n"}
 
       '
@@ -2699,8 +2664,8 @@ turns:
     - 'event: response.reasoning_part.done
 
       '
-    - 'data: {"type":"response.reasoning_part.done","sequence_number":277,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"item_id":"ad98154afb0c3f7d","part":{"text":"The
-      token_checker subagent has confirmed the token is \"CLIENT_AGENT_MESSAGE_9f21\".
+    - 'data: {"type":"response.reasoning_part.done","sequence_number":274,"output_index":10,"agent":{"agent_name":"/root"},"content_index":0,"item_id":"aae3c3ee93ab9825","part":{"text":"The
+      subagent token_checker has returned with the token: CLIENT_AGENT_MESSAGE_9f21.
       I should reply with only the token.\n","type":"reasoning_text"}}
 
       '
@@ -2710,7 +2675,7 @@ turns:
     - 'event: response.output_item.added
 
       '
-    - 'data: {"type":"response.output_item.added","sequence_number":278,"output_index":11,"agent":{"agent_name":"/root"},"item":{"id":"msg_b352ca2ed3b24cb0","content":[],"role":"assistant","status":"in_progress","type":"message","agent":{"agent_name":"/root"}}}
+    - 'data: {"type":"response.output_item.added","sequence_number":275,"output_index":11,"agent":{"agent_name":"/root"},"item":{"id":"msg_ae4c2d341dce17bc","content":[],"role":"assistant","status":"in_progress","type":"message","agent":{"agent_name":"/root"}}}
 
       '
     - '
@@ -2719,7 +2684,7 @@ turns:
     - 'event: response.content_part.added
 
       '
-    - 'data: {"type":"response.content_part.added","sequence_number":279,"output_index":11,"agent":{"agent_name":"/root"},"content_index":0,"item_id":"msg_b352ca2ed3b24cb0","part":{"annotations":[],"text":"","type":"output_text","logprobs":[]}}
+    - 'data: {"type":"response.content_part.added","sequence_number":276,"output_index":11,"agent":{"agent_name":"/root"},"content_index":0,"item_id":"msg_ae4c2d341dce17bc","part":{"annotations":[],"text":"","type":"output_text","logprobs":[]}}
 
       '
     - '
@@ -2728,7 +2693,7 @@ turns:
     - 'event: response.output_text.delta
 
       '
-    - 'data: {"type":"response.output_text.delta","sequence_number":280,"output_index":11,"agent":{"agent_name":"/root"},"content_index":0,"delta":"\n\nCLIENT","item_id":"msg_b352ca2ed3b24cb0","logprobs":[]}
+    - 'data: {"type":"response.output_text.delta","sequence_number":277,"output_index":11,"agent":{"agent_name":"/root"},"content_index":0,"delta":"\n\nCLIENT","item_id":"msg_ae4c2d341dce17bc","logprobs":[]}
 
       '
     - '
@@ -2737,7 +2702,7 @@ turns:
     - 'event: response.output_text.delta
 
       '
-    - 'data: {"type":"response.output_text.delta","sequence_number":281,"output_index":11,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_AGENT","item_id":"msg_b352ca2ed3b24cb0","logprobs":[]}
+    - 'data: {"type":"response.output_text.delta","sequence_number":278,"output_index":11,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_AGENT","item_id":"msg_ae4c2d341dce17bc","logprobs":[]}
 
       '
     - '
@@ -2746,7 +2711,7 @@ turns:
     - 'event: response.output_text.delta
 
       '
-    - 'data: {"type":"response.output_text.delta","sequence_number":282,"output_index":11,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_MESSAGE","item_id":"msg_b352ca2ed3b24cb0","logprobs":[]}
+    - 'data: {"type":"response.output_text.delta","sequence_number":279,"output_index":11,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_MESSAGE","item_id":"msg_ae4c2d341dce17bc","logprobs":[]}
 
       '
     - '
@@ -2755,7 +2720,7 @@ turns:
     - 'event: response.output_text.delta
 
       '
-    - 'data: {"type":"response.output_text.delta","sequence_number":283,"output_index":11,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_","item_id":"msg_b352ca2ed3b24cb0","logprobs":[]}
+    - 'data: {"type":"response.output_text.delta","sequence_number":280,"output_index":11,"agent":{"agent_name":"/root"},"content_index":0,"delta":"_","item_id":"msg_ae4c2d341dce17bc","logprobs":[]}
 
       '
     - '
@@ -2764,7 +2729,7 @@ turns:
     - 'event: response.output_text.delta
 
       '
-    - 'data: {"type":"response.output_text.delta","sequence_number":284,"output_index":11,"agent":{"agent_name":"/root"},"content_index":0,"delta":"9","item_id":"msg_b352ca2ed3b24cb0","logprobs":[]}
+    - 'data: {"type":"response.output_text.delta","sequence_number":281,"output_index":11,"agent":{"agent_name":"/root"},"content_index":0,"delta":"9","item_id":"msg_ae4c2d341dce17bc","logprobs":[]}
 
       '
     - '
@@ -2773,7 +2738,7 @@ turns:
     - 'event: response.output_text.delta
 
       '
-    - 'data: {"type":"response.output_text.delta","sequence_number":285,"output_index":11,"agent":{"agent_name":"/root"},"content_index":0,"delta":"f","item_id":"msg_b352ca2ed3b24cb0","logprobs":[]}
+    - 'data: {"type":"response.output_text.delta","sequence_number":282,"output_index":11,"agent":{"agent_name":"/root"},"content_index":0,"delta":"f","item_id":"msg_ae4c2d341dce17bc","logprobs":[]}
 
       '
     - '
@@ -2782,7 +2747,7 @@ turns:
     - 'event: response.output_text.delta
 
       '
-    - 'data: {"type":"response.output_text.delta","sequence_number":286,"output_index":11,"agent":{"agent_name":"/root"},"content_index":0,"delta":"2","item_id":"msg_b352ca2ed3b24cb0","logprobs":[]}
+    - 'data: {"type":"response.output_text.delta","sequence_number":283,"output_index":11,"agent":{"agent_name":"/root"},"content_index":0,"delta":"2","item_id":"msg_ae4c2d341dce17bc","logprobs":[]}
 
       '
     - '
@@ -2791,7 +2756,7 @@ turns:
     - 'event: response.output_text.delta
 
       '
-    - 'data: {"type":"response.output_text.delta","sequence_number":287,"output_index":11,"agent":{"agent_name":"/root"},"content_index":0,"delta":"1","item_id":"msg_b352ca2ed3b24cb0","logprobs":[]}
+    - 'data: {"type":"response.output_text.delta","sequence_number":284,"output_index":11,"agent":{"agent_name":"/root"},"content_index":0,"delta":"1","item_id":"msg_ae4c2d341dce17bc","logprobs":[]}
 
       '
     - '
@@ -2800,7 +2765,7 @@ turns:
     - 'event: response.output_text.done
 
       '
-    - 'data: {"type":"response.output_text.done","sequence_number":288,"output_index":11,"agent":{"agent_name":"/root"},"content_index":0,"item_id":"msg_b352ca2ed3b24cb0","logprobs":[],"text":"\n\nCLIENT_AGENT_MESSAGE_9f21"}
+    - 'data: {"type":"response.output_text.done","sequence_number":285,"output_index":11,"agent":{"agent_name":"/root"},"content_index":0,"item_id":"msg_ae4c2d341dce17bc","logprobs":[],"text":"\n\nCLIENT_AGENT_MESSAGE_9f21"}
 
       '
     - '
@@ -2809,7 +2774,7 @@ turns:
     - 'event: response.content_part.done
 
       '
-    - 'data: {"type":"response.content_part.done","sequence_number":289,"output_index":11,"agent":{"agent_name":"/root"},"content_index":0,"item_id":"msg_b352ca2ed3b24cb0","part":{"annotations":[],"text":"\n\nCLIENT_AGENT_MESSAGE_9f21","type":"output_text","logprobs":[]}}
+    - 'data: {"type":"response.content_part.done","sequence_number":286,"output_index":11,"agent":{"agent_name":"/root"},"content_index":0,"item_id":"msg_ae4c2d341dce17bc","part":{"annotations":[],"text":"\n\nCLIENT_AGENT_MESSAGE_9f21","type":"output_text","logprobs":[]}}
 
       '
     - '
@@ -2818,8 +2783,8 @@ turns:
     - 'event: response.output_item.done
 
       '
-    - 'data: {"type":"response.output_item.done","sequence_number":290,"output_index":10,"agent":{"agent_name":"/root"},"item":{"type":"reasoning","agent":{"agent_name":"/root"},"id":"ad98154afb0c3f7d","content":[{"type":"reasoning_text","text":"The
-      token_checker subagent has confirmed the token is \"CLIENT_AGENT_MESSAGE_9f21\".
+    - 'data: {"type":"response.output_item.done","sequence_number":287,"output_index":10,"agent":{"agent_name":"/root"},"item":{"type":"reasoning","agent":{"agent_name":"/root"},"id":"aae3c3ee93ab9825","content":[{"type":"reasoning_text","text":"The
+      subagent token_checker has returned with the token: CLIENT_AGENT_MESSAGE_9f21.
       I should reply with only the token.\n"}],"summary":[],"status":"completed"}}
 
       '
@@ -2829,7 +2794,7 @@ turns:
     - 'event: response.output_item.done
 
       '
-    - 'data: {"type":"response.output_item.done","sequence_number":291,"output_index":11,"agent":{"agent_name":"/root"},"item":{"type":"message","agent":{"agent_name":"/root"},"id":"msg_b352ca2ed3b24cb0","role":"assistant","phase":"final_answer","status":"completed","content":[{"type":"output_text","text":"\n\nCLIENT_AGENT_MESSAGE_9f21","annotations":[],"logprobs":[]}]}}
+    - 'data: {"type":"response.output_item.done","sequence_number":288,"output_index":11,"agent":{"agent_name":"/root"},"item":{"type":"message","agent":{"agent_name":"/root"},"id":"msg_ae4c2d341dce17bc","role":"assistant","phase":"final_answer","status":"completed","content":[{"type":"output_text","text":"\n\nCLIENT_AGENT_MESSAGE_9f21","annotations":[],"logprobs":[]}]}}
 
       '
     - '
@@ -2838,21 +2803,21 @@ turns:
     - 'event: response.completed
 
       '
-    - 'data: {"type":"response.completed","sequence_number":292,"response":{"id":"resp_01a17d25-a143-74f2-b1a2-302e2be918c4","object":"response","created_at":1793100980,"model":"Qwen/Qwen3.8-27B-FP8","status":"completed","output":[{"type":"reasoning","agent":{"agent_name":"/root"},"id":"8ba038bd4489f9e2","content":[{"type":"reasoning_text","text":"The
+    - 'data: {"type":"response.completed","sequence_number":289,"response":{"id":"resp_01a1815f-898b-79c2-821f-36bde9d1a9f2","object":"response","created_at":1793171884,"model":"Qwen/Qwen3.8-27B-FP8","status":"completed","output":[{"type":"reasoning","agent":{"agent_name":"/root"},"id":"add89aa0bff2de9b","content":[{"type":"reasoning_text","text":"The
       user wants me to:\n1. Spawn a subagent named \"token_checker\"\n2. Ask it to
-      verify the secret test token from the client-supplied agent_message\n3. The
-      client-supplied agent_message contains: \"The secret test token is CLIENT_AGENT_MESSAGE_9f21.\"\n4.
-      Wait for the subagent''s answer\n5. Reply with only the token\n\nThe token is
-      clearly \"CLIENT_AGENT_MESSAGE_9f21\" from the payload. Let me spawn the subagent
-      as instructed and then wait for its response.\n"}],"summary":[],"status":"completed"},{"type":"multi_agent_call","id":"mac_01a17d25-b5f6-7790-afac-a2acb40bca3b","call_id":"call_81a381c2d726f2f1","action":"spawn_agent","arguments":"{\"task_name\":\"token_checker\",\"message\":\"enc_mCU8gIgb-MW_G05X_jSb75YrHv4Ua2j7nF1KJbomDfEbUrFjTz_SwOtOnq9--ajSuST9lyfuTYZZ-9g-0-7sro_Zg54EeFAcndhlKBMfih-e_VzD5FUPIlodLj-aeyrdJEx1303ykllahnh1lLqewW7tYXwPbAwNEjPnCIhhTDrBMD8TZZ90pItZcQ53rXhVaY2ICRl6GoXHa-Q8JtDDRWjT0xOA9VeceyrT6aknTwK8DhHNozzQqyorzAwOgjwB7evFLEgXPMHmUc5N2kWAFfOCoULYeHDSvq8_jDh-etr7ymdNyMUCJ9UNa9OSSrExm_3ESjgfZZGZArUos58fm_b1GjWY1zaeXl-QRRUJe8Pi4Fr-HWDB_ElZPSBsjEu2qSznjLNNe2RX2qfHRfDBAgN2J19-1g7TC2KrOV0lSw\",\"fork_turns\":\"all\"}","agent":{"agent_name":"/root"}},{"type":"agent_message","id":"amsg_01a17d25-b5f6-7790-afac-a2caed51f210","author":"/root","recipient":"/root/token_checker","content":[{"type":"encrypted_content","encrypted_content":"enc_PNr0mlPh0gA5-wEpfa5cSFm0Dad0_a8lLWBgKb60_TOvC-OW_oPjhMFi5ljDOM96KrrPreEUPS6AKmNvewEYt7SujpqYQbQ5N1IazOPihKGdz9gDcm3tOCvj_DD6c-rDuYxu1cD98oyoq6WuTT011L02Lch2AjnkzAT-UeqE-mH1Z90Rl9cRUioXq0KG3NVPnALW8fK8ukN3_lYkAvEN1_MS6xF7OovJLBJ1TmUUq5g5dqJKTPEZOG-3ZQ4-YaddsldmbhCwf8Q7QpI80Jd0Pxa-38CqWCn7jUzDzr47Xu-JIEenFnwGl2NZ1N6yi-pRz9zOsoVhahZJKL9B35v9wCIsszooM-s71ne7i42ov46kMNkbJ6PHkhZqFcZb_ok6mkiJF5IVsgdSR5h6pnmiOPpgPCtTd-rZ5kUis06hNA"}],"agent":{"agent_name":"/root/token_checker"}},{"type":"multi_agent_call_output","id":"maco_01a17d25-b5f7-7221-b714-c52732ab0a37","call_id":"call_81a381c2d726f2f1","action":"spawn_agent","output":[{"type":"output_text","text":"{\"task_name\":\"/root/token_checker\"}","annotations":[],"logprobs":[]}],"agent":{"agent_name":"/root"}},{"type":"reasoning","agent":{"agent_name":"/root/token_checker"},"id":"8c687b1ba8ebe8bc","content":[{"type":"reasoning_text","text":"The
-      task is clear: I need to verify and confirm the exact token string from the
-      client-supplied agent message. The message states: \"The secret test token is
-      CLIENT_AGENT_MESSAGE_9f21.\"\n\nThe token string is \"CLIENT_AGENT_MESSAGE_9f21\".
-      I should reply with only the token string itself, nothing else.\n"}],"summary":[],"status":"completed"},{"type":"reasoning","agent":{"agent_name":"/root"},"id":"b7b1ceb480fa6113","content":[{"type":"reasoning_text","text":"The
-      subagent was created successfully. Now I need to wait for its answer.\n"}],"summary":[],"status":"completed"},{"type":"multi_agent_call","id":"mac_01a17d25-c103-7053-8c96-cdb63a30910a","call_id":"call_91602ebdee01dd4f","action":"wait_agent","arguments":"{\"timeout_ms\":30000}","agent":{"agent_name":"/root"}},{"type":"message","agent":{"agent_name":"/root/token_checker"},"id":"msg_8867cf9a0996255c","role":"assistant","phase":"final_answer","status":"completed","content":[{"type":"output_text","text":"\n\nCLIENT_AGENT_MESSAGE_9f21","annotations":[],"logprobs":[]}]},{"type":"agent_message","id":"amsg_01a17d25-c376-7fd3-9d98-0e2c5d3f72f0","author":"/root/token_checker","recipient":"/root","content":[{"type":"encrypted_content","encrypted_content":"enc_liT5gqiKzZ7Ethy_Gcexg1abih3_XRyiH8n6407pBgRhX5H7sAKUmwi5WO82VYHJgOFVB5i2vg"}],"agent":{"agent_name":"/root"}},{"type":"multi_agent_call_output","id":"maco_01a17d25-c376-7fd3-9d98-0e463921e9ae","call_id":"call_91602ebdee01dd4f","action":"wait_agent","output":[{"type":"output_text","text":"{\"message\":\"Agent
-      mailbox updated.\",\"timed_out\":false}","annotations":[],"logprobs":[]}],"agent":{"agent_name":"/root"}},{"type":"reasoning","agent":{"agent_name":"/root"},"id":"ad98154afb0c3f7d","content":[{"type":"reasoning_text","text":"The
-      token_checker subagent has confirmed the token is \"CLIENT_AGENT_MESSAGE_9f21\".
-      I should reply with only the token.\n"}],"summary":[],"status":"completed"},{"type":"message","agent":{"agent_name":"/root"},"id":"msg_b352ca2ed3b24cb0","role":"assistant","phase":"final_answer","status":"completed","content":[{"type":"output_text","text":"\n\nCLIENT_AGENT_MESSAGE_9f21","annotations":[],"logprobs":[]}]}],"usage":{"input_tokens":8810,"output_tokens":391,"total_tokens":9201,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":0}},"incomplete_details":null,"error":null,"previous_response_id":null,"instructions":null,"max_tool_calls":null,"service_tier":"auto","tools":[],"tool_choice":"auto","completed_at":1793100991,"truncation":"disabled","parallel_tool_calls":false,"text":{"format":{"type":"text"}},"top_p":1.0,"presence_penalty":0.0,"frequency_penalty":0.0,"top_logprobs":0,"temperature":1.0,"reasoning":null,"max_output_tokens":8192,"store":false,"background":false,"metadata":{},"safety_identifier":null,"prompt_cache_key":null,"prompt_cache_options":null}}
+      verify the secret test token from the client-supplied agent_message\n3. Include
+      the message in its assignment\n4. Wait for the subagent''s answer\n5. Reply
+      with only the token (or NO_AGENT_MESSAGE if unavailable)\n\nThe client-supplied
+      agent_message contains: \"The secret test token is CLIENT_AGENT_MESSAGE_9f21.\"\n\nSo
+      the token is \"CLIENT_AGENT_MESSAGE_9f21\". Let me spawn the subagent with this
+      information.\n"}],"summary":[],"status":"completed"},{"type":"multi_agent_call","id":"mac_01a1815f-9f0f-74e0-b554-4a497b665bd4","call_id":"call_b41a46642b87cd42","action":"spawn_agent","arguments":"{\"task_name\":\"token_checker\",\"message\":\"enc_W5tYsSWqwX-mc1-3yvPrW1SizSMcEeP5KC2cKigN8o1qoXzfwZdtQxYcIQ_plSTFJXzU3QS1Mvd_mYEhxR1SL94ssK8MdjUmH0pTD-N1RNIjZ3peQGslRTjj991Y5XoAh8vJTsVFnva_wPCAAMY-WEHgAeMvHtCzTOMZSb7JhE2BN5Yvw-gBaIEE2NL4AzJtELPeETKsXOv4GL1Zl1VFKzSLHOyg4aHtU3Akasl9_eL21qGreb271ax5LSar-owXsSjnjByqNyJ20fhkfH0cLkET2iqexDmY_hJlioWdR7fnGexrgGkzt4OU4y1uGr8G6FOpkulro8QpKhXjkc75Rc7OGoz-RKwpHtxi8HkZrqQ06Jsjd0MhVO7ALi3JmSLSSLnaxyvgZ0kBHupmwX6MTmaM6YQ44d7-BnM4glL_bLOnOZ0kmXFtz9a9a4I_xIw\",\"fork_turns\":\"all\"}","agent":{"agent_name":"/root"}},{"type":"agent_message","id":"amsg_01a1815f-9f10-7430-972e-1255ac5dc6d8","author":"/root","recipient":"/root/token_checker","content":[{"type":"encrypted_content","encrypted_content":"enc_b8enVb8m2pgBOoHbkS8enPzKm0NHYLg2bdK5Irq19vHTNvHTQE5bSRrxMkCBjsARB4gSt9QGzr3ywKTsI76Tdm4cN8xV2qaM8OApF9PNfadgj1_hhkApL4iY-IKD1-hcZVhEjHSoIbJcNUR8-ernWP1ttzn0I2hJmKpOzRS1gRXWdzR5S5hfF3d5rYCOVoKhKiCyJd8l6uEjf_rnJF5RK2DGKwWOqDeLK0BZMGpeJVWZh5iNEBn6MIWTcVkJQKgcncLm--WcvIXkInwkT5bOYutkbl92EvHAXcrpmuxiVVoPcqOiBmF7YU5TGFPRR3jjEenxHh-bdNeHH_g5U0GRlyNrnMwobUb1YSmUQeGCASNGr4r2_Lne-RIkWa2K5jUayGnnwrgvAPLF7di_vhsgHDFSOK29L8MiVnuevR0_S2Pe4FNO687MyxjBnCBOWbo"}],"agent":{"agent_name":"/root/token_checker"}},{"type":"multi_agent_call_output","id":"maco_01a1815f-9f10-7430-972e-1273a5ca78a8","call_id":"call_b41a46642b87cd42","action":"spawn_agent","output":[{"type":"output_text","text":"{\"task_name\":\"/root/token_checker\"}","annotations":[],"logprobs":[]}],"agent":{"agent_name":"/root"}},{"type":"reasoning","agent":{"agent_name":"/root/token_checker"},"id":"98725c758063dbef","content":[{"type":"reasoning_text","text":"The
+      task is straightforward. I need to extract the secret test token from the client-supplied
+      agent_message and reply with only the token string itself.\n\nThe message says:
+      \"The secret test token is CLIENT_AGENT_MESSAGE_9f21.\"\n\nThe token is: CLIENT_AGENT_MESSAGE_9f21\n"}],"summary":[],"status":"completed"},{"type":"reasoning","agent":{"agent_name":"/root"},"id":"8812a11d22162bea","content":[{"type":"reasoning_text","text":"The
+      subagent was spawned. Now I need to wait for its answer.\n"}],"summary":[],"status":"completed"},{"type":"multi_agent_call","id":"mac_01a1815f-aa0c-7213-892f-3ba26e4202ed","call_id":"call_84c2e4ce79e15f58","action":"wait_agent","arguments":"{\"timeout_ms\":30000}","agent":{"agent_name":"/root"}},{"type":"message","agent":{"agent_name":"/root/token_checker"},"id":"msg_8dbcf1faa4b01ab8","role":"assistant","phase":"final_answer","status":"completed","content":[{"type":"output_text","text":"\n\nCLIENT_AGENT_MESSAGE_9f21","annotations":[],"logprobs":[]}]},{"type":"agent_message","id":"amsg_01a1815f-abed-7a32-a7b1-cbfb977a1b20","author":"/root/token_checker","recipient":"/root","content":[{"type":"encrypted_content","encrypted_content":"enc_sAQkeMeB5_ewKOZr0IRWSHtZ5pvVaur9Cw4R82_PaA8eDBpnZr9Hkh3LDopaptmzs0WkzcspaQ"}],"agent":{"agent_name":"/root"}},{"type":"multi_agent_call_output","id":"maco_01a1815f-abed-7a32-a7b1-cc1fc782f640","call_id":"call_84c2e4ce79e15f58","action":"wait_agent","output":[{"type":"output_text","text":"{\"message\":\"Agent
+      mailbox updated.\",\"timed_out\":false}","annotations":[],"logprobs":[]}],"agent":{"agent_name":"/root"}},{"type":"reasoning","agent":{"agent_name":"/root"},"id":"aae3c3ee93ab9825","content":[{"type":"reasoning_text","text":"The
+      subagent token_checker has returned with the token: CLIENT_AGENT_MESSAGE_9f21.
+      I should reply with only the token.\n"}],"summary":[],"status":"completed"},{"type":"message","agent":{"agent_name":"/root"},"id":"msg_ae4c2d341dce17bc","role":"assistant","phase":"final_answer","status":"completed","content":[{"type":"output_text","text":"\n\nCLIENT_AGENT_MESSAGE_9f21","annotations":[],"logprobs":[]}]}],"usage":{"input_tokens":8843,"output_tokens":392,"total_tokens":9235,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":0}},"incomplete_details":null,"error":null,"previous_response_id":null,"instructions":null,"max_tool_calls":null,"service_tier":"auto","tools":[],"tool_choice":"auto","completed_at":1793171894,"truncation":"disabled","parallel_tool_calls":false,"text":{"format":{"type":"text"}},"top_p":1.0,"presence_penalty":0.0,"frequency_penalty":0.0,"top_logprobs":0,"temperature":1.0,"reasoning":null,"max_output_tokens":8192,"store":false,"background":false,"metadata":{},"safety_identifier":null,"prompt_cache_key":null,"prompt_cache_options":null}}
 
       '
     - '

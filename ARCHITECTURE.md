@@ -1920,19 +1920,29 @@ the operator enables it, and Eryx runtime readiness succeeds.
   when restoring client-owned tool calls.
 
   MCP discovery history is also request-scoped registry state:
-  `mcp_list_tools_items: HashMap<String, Vec<McpListTools>>` groups records by
-  `server_label`. Registry construction puts the current discovery item first;
-  rehydration appends prior `InputItem::McpListTools` records only for labels already
-  present in that map. `mcp_list_tool_items()` exposes entries whose vector still has
-  exactly one element—the current item with no history—to both blocking output
-  assembly and streaming lifecycle emission. Streaming clears the map after the first
-  inference round. Consequently a server's list lifecycle is emitted only when no
-  prior list record exists and never repeats across rounds.
+  `mcp_list_tools_items: IndexMap<String, Vec<McpListTools>>` groups records by
+  `server_label`. Registry construction accepts the response's discovery history
+  before materialization, so restored children can reuse the root's successful
+  listing even when their forked message context omits it. Current declarations
+  and allowlists still validate the tools exposed for execution. Equivalent
+  successful listings are suppressed in JSON and SSE; failed or changed discovery
+  remains visible. Streaming clears the lifecycle records after their first emission.
+  Returned public `mcp_call` history uses the common model-input conversion to
+  recover its function-call/result pair using the current discovered binding,
+  with retained listing names as a fallback. Alias assignment precedes request
+  allowlist filtering so name collisions stay stable across continuations.
+  Public records do not retain private inference call IDs; their public item ID
+  identifies the reconstructed pair without changing client-owned call IDs.
 - **`executors.rs`** — `GatewayExecutors`, a shared registry built once at startup and
   reused across requests. Configured MCP servers are the only lazily connected slot:
   clients and discovered handlers are created on demand and cached by `server_label`
-  across requests; request-declared servers connect afresh for each request, and
-  their discovered handlers are reused only within that request. The shared
+  across requests; request-declared handlers are reused only within a request.
+  With a retained successful listing, their connection is established only when
+  a tool is invoked, so a passive continuation neither reconnects nor lists tools.
+  `McpHandler` distinguishes spec-only, connected, and lazy connection states;
+  members of a restored server share its initialization cell. Fresh discovery
+  remains eager. Client-returned schemas stay request-scoped; only actual remote
+  discovery populates the configured-server discovery cache. The shared
   `WebSearchHandler` and the opt-in `CodeInterpreterExecutor` are built once at
   startup; the code interpreter is backed by an embedded Eryx sandbox, enabled
   by configuration, and the default config is disabled. These executors bind

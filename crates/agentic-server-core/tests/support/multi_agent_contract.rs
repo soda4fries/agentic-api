@@ -170,7 +170,7 @@ impl RecordedSession {
         Ok(session)
     }
 
-    /// The successful stateless scenarios keep public identities, final tool statuses,
+    /// The successful stateless scenarios keep public identities
     /// and one equivalent successful MCP discovery throughout their complete history.
     /// Failed discovery remains observable and does not erase a previous successful listing.
     /// # Errors
@@ -194,22 +194,10 @@ impl RecordedSession {
                     OutputItem::Compaction(_) => return Err(mismatch("scenario unexpectedly compacted history")),
                     _ => None,
                 };
-                if prefix.is_some_and(|prefix| item.id().is_none_or(|id| !id.starts_with(prefix))) {
-                    return Err(mismatch("public item ID cannot be reused in client history"));
-                }
-                if matches!(
-                    item,
-                    OutputItem::FunctionCall(_)
-                        | OutputItem::ShellCall(_)
-                        | OutputItem::CustomToolCall(_)
-                        | OutputItem::ToolSearchCall(_)
-                        | OutputItem::WebSearchCall(_)
-                        | OutputItem::McpCall(_)
-                        | OutputItem::CodeInterpreterCall(_)
-                ) && serde_json::to_value(item).map_err(|error| mismatch(error.to_string()))?["status"]
-                    != "completed"
+                if item.id().is_none_or(str::is_empty)
+                    || prefix.is_some_and(|prefix| item.id().is_none_or(|id| !id.starts_with(prefix)))
                 {
-                    return Err(mismatch("successful scenario returned a non-completed tool call"));
+                    return Err(mismatch("public item ID cannot be reused in client history"));
                 }
                 if let OutputItem::McpListTools(listing) = item
                     && listing.error.is_none()

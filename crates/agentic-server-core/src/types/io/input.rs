@@ -5,6 +5,7 @@ mod file_text;
 mod validation;
 mod window;
 
+pub(crate) use conversions::{internal_mcp_tool_name, stable_name_hash};
 pub use file_text::InputFileError;
 pub use validation::InputValidationError;
 
